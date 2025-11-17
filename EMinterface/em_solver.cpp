@@ -8,8 +8,14 @@
 #include <stdexcept>    
 #include <algorithm>    
 #include <exception>    
+#include <Eigen/Dense> 
+
+
+
+
 
 using namespace std;
+using namespace Eigen; 
 using complexd = complex<double>;
 const double EPS = 1e-12;
 const double PI = acos(-1.0);
@@ -138,7 +144,7 @@ private:
     
 
 
-    /*
+    
     // Solve TE case using 2x2 linear system 
     Solution solve_TE() {
         // unknowns: Ar1y, Ap2y
@@ -178,13 +184,13 @@ private:
         // Power calculations
         return calculate_power(sol);
     }
-    */
+    
 
 
 
 
 
-
+    /*
     //per ora preferisco risolvere direttamente con le formule chiuse
     Solution solve_TE() {
         // Dati noti
@@ -250,244 +256,104 @@ private:
     }
 
 
-
-
-
-
-    /*
-    
-    // posso risolvere il sistema lineare 4x4 direttamente con eliminazione gaussiana e trovare così subito le incognite (Ar1x, Ar1z, Ap2x, Ap2z) 
-    Solution solve_TM() {
-        // Known: Ap1.x and Ap1.z 
-
-        complexd Ap1x = Ap1.x;
-        complexd Ap1z = Ap1.z;
-
-        // vettore di incognite x = [Ar1x, Ar1z, Ap2x, Ap2z]
-        const int N = 4;
-        vector<vector<complexd>> M(N, vector<complexd>(N, complexd(0.0)));
-        vector<complexd> rhs(N, complexd(0.0));
-
-        // equazioni che uso per costruire sistema:
-        // (I)  ẑ × (Ap1 + Ar1 - Ap2) = 0  -> two scalar eqs (x and y components)
-        // (II) (1/mu1) ẑ × (kp1×Ap1 + kr1×Ar1) - (1/mu2) ẑ × (kp2×Ap2) = 0 -> two scalar eqs (x and y)
-        // Additionally Ar1 must satisfy Ar1·kr1 = 0 (orthogonality) -> 1 eq
-        
-        // a questo punto assumo che l'onda sia già TEM, quindi Ap1·kp1 = 0
-
-        // But the vector eqs produce the necessary independent equations. 
-        // Eq0: x-component of ẑ×(...) = 0
-        // Eq1: y-component of ẑ×(...) = 0
-        // Eq2: x-component of (1/mu1) ẑ×(kp1×Ap1 + kr1×Ar1) - (1/mu2) ẑ×(kp2×Ap2) = 0
-        // Eq3: y-component of same as Eq2
-
-        // Unknown vectors:
-        // Ar1 = (u0, 0, u1)
-        // Ap2 = (u2, 0, u3)
-
-        // Precompute some constant contributions
-        Vector3D Ap1v = Ap1;
-        Vector3D Ar1v; // symbolic
-        Vector3D Ap2v;
-
-        // Helper lambda: compute zhat x V for symbolic coefficients on unknowns
-        // For each equation, we find coefficients for u0..u3 and known term from Ap1.
-
-        auto zcross = [](const Vector3D& v)->Vector3D {
-            // zhat = (0,0,1) cross v = (-v.y, v.x, 0)
-            return Vector3D(-v.y, v.x, complexd(0.0));
-            };
-
-        // Define symbolic Ar1 = [u0, 0, u1], Ap2 = [u2, 0, u3]
-        // We compute each lhs as linear combination: lhs = C0*u0 + C1*u1 + C2*u2 + C3*u3 + known_term
-
-        // Precompute known part for Eq0 and Eq1 from z×Ap1:
-        Vector3D zAp1 = zcross(Ap1v); // known
-        // z×Ar1 contributes: -Ar1.y, Ar1.x, 0 -> Ar1.y = 0 => (0, Ar1x,0)
-        // z×Ar1 = (0, u0, 0)
-        // z×Ap2 = (0, Ap2x, 0) but with minus sign since Ap1+Ar1-Ap2 = 0
-
-        // Eq0: x-component of z×(...) = 0 -> zAp1.x + zAr1.x - zAp2.x = 0
-        // the only nontrivial component from z×E continuity is the y-component:
-        // EqY1: y-comp: zAp1.y + zAr1.y - zAp2.y = 0 => Ap1x + Ar1x - Ap2x = 0
-
-   
-        
-        //Riga 0: Continuità di E_y
-        //cioè ho Ap1x+Ar1x - Ap2x = 0 che riarrangio per il sistema Mx = b e diventa 
-        // (1)Ar1x + (0)Ar1z + (-1)Ap2x + (0)Ap2z = -Ap1x
-
-        M[0][0] = complexd(1.0); // u0 cioè il coefficente di Ar1x
-        M[0][1] = complexd(0.0); // u1    // Coeff. per u1 (Ar1z)
-        M[0][2] = complexd(-1.0); // u2     cioè il coefficente di Ap2x
-        M[0][3] = complexd(0.0); // u3     // Coeff. per u3 (Ap2z)
-
-        rhs[0] = -Ap1x;  // questo è termine noto
-
-        // Next build Eq1 and Eq2 from H continuity vector (cioe devo calolare i termini z × (k×A) )
-        // Compute known term: z×(kp1×Ap1) (this is known)
-        Vector3D kp1v = kp1;
-        Vector3D kr1v = kr1;
-        Vector3D kp2v = kp2;
-
-        Vector3D kpxAp1 = cross(kp1v, Ap1v);
-        Vector3D z_kpxAp1 = zcross(kpxAp1);
-
-        // For Ar1: term z×(kr1 × Ar1) is linear in Ar1 components u0,u1
-        // Let Ar1 = [u0, 0, u1]
-        // compute kr1 × Ar1 = cross(kr1, Ar1) symbolically: cross(k, [u0,0,u1])
-        // cross = ( ky*u1 - kz*0, kz*u0 - kx*u1, kx*0 - ky*u0 ) but ky=0
-        // So kr1×Ar1 = (0 - kr1.z*0, kr1.z*u0 - kr1.x*u1, kr1.x*0 - 0*u0) => (0, kr1.z*u0 - kr1.x*u1, 0)
-        // Then z×(kr1×Ar1) = (- (kr1.z*u0 - kr1.x*u1).y , (kr1.z*u0 - kr1.x*u1).x, 0) but it's simpler to compute directly with symbolic coefs:
-        // Actually kr1×Ar1 has only y-component = (kr1.z*u0 - kr1.x*u1)
-        // z×(vector with only y-component Y) = (-Y, 0, 0)
-
-        // So z×(kr1×Ar1) = ( -(kr1.z*u0 - kr1.x*u1), 0, 0 )
-
-        // Similarly for kp2×Ap2 with Ap2 = [u2,0,u3]:
-        // kp2×Ap2 has y-component = kp2.z*u2 - kp2.x*u3
-        // z×(kp2×Ap2) = ( -(kp2.z*u2 - kp2.x*u3), 0, 0 )
-
-        // H continuity: (1/mu1)[ z×(kp1×Ap1) + z×(kr1×Ar1) ] - (1/mu2)[ z×(kp2×Ap2) ] = 0
-        // This gives components: x and y (but as above y are zeros); main non-trivial component is x
-        // We'll form two scalar equations: x-component and y-component of that vector equation.
-        // From the algebra above, z×(kr1×Ar1) contributes only to x-component.
-        // z×(kp1×Ap1) may have both x and y components.
-
-        // Compute known parts numeric:
-        Vector3D z_kp1xAp1 = z_kpxAp1;
-        // z×(kr1×Ar1) contributions coefficients:
-        complexd kr1_z = kr1v.z;
-        complexd kr1_x = kr1v.x;
-        complexd kp2_z = kp2v.z;
-        complexd kp2_x = kp2v.x;
-
-        // Eq1: x-component of H-continuity:
-        // (1/mu1) * ( z_kp1xAp1.x + ( - (kr1.z*u0 - kr1.x*u1) ) ) - (1/mu2) * ( - (kp2.z*u2 - kp2.x*u3) ) = 0
-        // Rearranged as coefficients for u0..u3 and rhs = - (1/mu1) * z_kp1xAp1.x
-
-        complexd mu1 = m1.mu;
-        complexd mu2 = m2.mu;
-
-        // coefficient u0:
-        M[1][0] = (-kr1_z) / mu1; // because inside there's -(kr1.z*u0 - kr1.x*u1) => term for u0 is -kr1.z, divided by mu1
-        // coefficient u1:
-        M[1][1] = (kr1_x) / mu1;  // because -(kr1.z*u0 - kr1.x*u1) gives +kr1.x * u1
-        // coefficient u2:
-        M[1][2] = (-(-kp2_z)) / mu2; // from - (1/mu2)* ( - (kp2.z*u2 - kp2.x*u3) ) => +kp2.z/mu2
-        // coefficient u3:
-        M[1][3] = (-(-(-kp2_x))) / mu2; // be careful: simplifies to (-(-(-kp2_x)))/mu2 => -( -kp2_x)/mu2 = kp2_x/mu2?
-        // Let's compute directly: - (1/mu2) * ( - (kp2.z*u2 - kp2.x*u3) ) = (1/mu2)*(kp2.z*u2 - kp2.x*u3)
-        // So coef u2 = kp2.z / mu2, coef u3 = -kp2.x / mu2
-        M[1][2] = kp2_z / mu2;
-        M[1][3] = -kp2_x / mu2;
-
-        rhs[1] = -(z_kp1xAp1.x) / mu1;
-
-        // Eq2: y-component of H-continuity:
-        // compute z×(kp1×Ap1).y + z×(kr1×Ar1).y - (mu1/mu2) * z×(kp2×Ap2).y = 0
-        // But from symbolic earlier, z×(kr1×Ar1).y = 0; z×(kp2×Ap2).y = 0
-        // Thus Eq2 reduces to (1/mu1) * z_kp1xAp1.y = 0 -> gives value maybe nonzero depending on Ap1
-        // So Eq2 becomes simply that known term must be canceled by nothing -> this is an equation for unknowns only if z×(kr1×Ar1).y or z×(kp2×Ap2).y nonzero
-        // Let's compute contributions more generally using full vector algebra to be safe.
-
-        // We'll compute coefficients for Eq2 by explicitly computing symbolic expressions using the generic cross formulas.
-
-        // Build linear coefficients by constructing matrices of influence:
-        // For a given unknown u = u0..u3, compute z×(k×A) contribution when A has that single unknown =1 and others 0.
-
-        auto compute_z_k_cross_A_coeffs = [&](const Vector3D& k, int unknownIndex) -> Vector3D {
-            // unknownIndex: 0->Ar1x, 1->Ar1z, 2->Ap2x, 3->Ap2z
-            Vector3D A(0.0, 0.0, 0.0);
-            if (unknownIndex == 0) A.x = complexd(1.0), A.y = complexd(0.0), A.z = complexd(0.0); // Ar1x
-            if (unknownIndex == 1) A.x = complexd(0.0), A.y = complexd(0.0), A.z = complexd(1.0); // Ar1z
-            if (unknownIndex == 2) A.x = complexd(1.0), A.y = complexd(0.0), A.z = complexd(0.0); // Ap2x
-            if (unknownIndex == 3) A.x = complexd(0.0), A.y = complexd(0.0), A.z = complexd(1.0); // Ap2z
-            Vector3D kxA = cross(k, A);
-            return zcross(kxA);
-            };
-
-        // For Eq2 and Eq3 we'll build general coefficients using above lambda:
-        // Eq index 2: x-component of (1/mu1)[ z×(kp1×Ap1) + z×(kr1×Ar1) ] - (1/mu2)[ z×(kp2×Ap2) ] = 0
-        // Eq index 3: y-component
-
-        // Known part:
-        Vector3D knownH = z_kp1xAp1; // z×(kp1×Ap1)
-
-        // For Ar1 unknowns (0,1) using kr1:
-        for (int ui = 0; ui < 2; ++ui) {
-            Vector3D coeff = compute_z_k_cross_A_coeffs(kr1v, ui);
-            // add (1/mu1) * coeff to matrix row 2 (x) and row3 (y), for u0,u1 respectively
-            M[2][ui] += coeff.x / mu1;
-            M[3][ui] += coeff.y / mu1;
-        }
-        // For Ap2 unknowns (2,3) using kp2 with minus (1/mu2) factor
-        for (int ui = 2; ui < 4; ++ui) {
-            Vector3D coeff = compute_z_k_cross_A_coeffs(kp2v, ui);
-            M[2][ui] += -coeff.x / mu2;
-            M[3][ui] += -coeff.y / mu2;
-        }
-        // RHS are negative of known part divided by mu1
-        rhs[2] = -knownH.x / mu1;
-        rhs[3] = -knownH.y / mu1;
-
-        // NOTE: earlier we already set row 1 (index 0) as continuity y-component of E
-        // Now we must ensure rows 2..3 include contributions from Ar1 and Ap2. But we also must ensure unknown Ar1 orthogonality Ar1·kr1 = 0 is satisfied.
-        // However the system we built (with H-continuity x & y) plus E-continuity y and the orthogonality Ar1·kr1 maybe redundant/consistent.
-        // To ensure a full-rank 4x4 system we will replace row 3 by orthogonality constraint Ar1·kr1 = 0:
-        // Ar1x*kr1x + Ar1z*kr1z = 0  => coefficients: [kr1x, kr1z, 0,0] , rhs = 0
-
-        // la riga 3 è la condizione di ortogonalità di Ar1 con kr1 (Ar1·kr1 = 0) che si traduce in  Ar1x*kr1x + Ar1z*kr1z = 0
-        M[3][0] = kr1v.x;   // coefficient for Ar1x
-        M[3][1] = kr1v.z;
-        M[3][2] = complexd(0.0);
-        M[3][3] = complexd(0.0);
-        rhs[3] = complexd(0.0);
-
-        // Now solve 4x4 linear system using Gaussian elimination (partial pivot)
-        // Convert to augmented matrix
-        vector<vector<complexd>> A(N, vector<complexd>(N + 1, complexd(0.0)));
-        for (int i = 0; i < N; ++i) {
-            for (int j = 0; j < N; ++j) A[i][j] = M[i][j];
-            A[i][N] = rhs[i];
-        }
-
-        // Gaussian elimination
-        for (int i = 0; i < N; i++) {
-            // pivot
-            int piv = i;
-            for (int r = i + 1; r < N; r++) {
-                if (abs(A[r][i]) > abs(A[piv][i])) piv = r;
-            }
-            if (abs(A[piv][i]) < 1e-15) throw runtime_error("Sistema lineare TM singolare o mal condizionato.");
-            if (piv != i) swap(A[piv], A[i]);
-            complexd diag = A[i][i];
-            for (int c = i; c <= N; c++) A[i][c] /= diag;
-            for (int r = 0; r < N; r++) {
-                if (r == i) continue;
-                complexd fac = A[r][i];
-                if (abs(fac) < 1e-18) continue;
-                for (int c = i; c <= N; c++) A[r][c] -= fac * A[i][c];
-            }
-        }
-        vector<complexd> solu(N);
-
-        // adesso a questo punto la matrice è in forma ridotta e posso leggere le soluzioni
-        // Le prime N colonne (indici 0 a N-1) formano la matrice identità I
-        //L'ultima colonna (la N-esima) contiene i valori della soluzione del sistema Ax=b
-        //L'ultimo passaggio solu[i] = A[i][N] semplicemente copia questa colonna finale nel vettore solu.
-
-        for (int i = 0; i < N; i++) solu[i] = A[i][N];
-
-        Solution sol;
-        sol.Ar1 = Vector3D(solu[0], complexd(0.0), solu[1]);
-        sol.Ap2 = Vector3D(solu[2], complexd(0.0), solu[3]);
-
-        return calculate_power(sol);
-    }
     */
 
 
+
+
+
+
+
+                    //// FUNZIONANTE ////
+                      /// !!!! !!! ///
+
+    // ========================================================================
+    // NEW solve_TM IMPLEMENTATION (using Eigen)
+    // This function implements the physically correct 4x4 linear system
+    // derived from Maxwell's boundary conditions for the TM case.
+    //
+    // System: M * x = rhs
+    // Unknowns: x = [Ar1x, Ar1z, Ap2x, Ap2z]^T
+    //
+    // Equations:
+    // 1. Continuity of E_x:     Ap1x + Ar1x = Ap2x
+    // 2. Continuity of H_y:     (1/mu1)(k_p1 x Ap1)_y + (1/mu1)(k_r1 x Ar1)_y = (1/mu2)(k_p2 x Ap2)_y
+    // 3. Reflected TEM:         Ar1 . k_r1 = 0
+    // 4. Transmitted TEM:       Ap2 . k_p2 = 0
+    // ========================================================================
+Solution solve_TM() {
+    // Known: Ap1.x and Ap1.z 
+    complexd Ap1x = Ap1.x;
+    complexd Ap1z = Ap1.z;
+
+    // Unknowns vector x = [Ar1x, Ar1z, Ap2x, Ap2z]
+    Matrix4cd M = Matrix4cd::Zero();
+    Vector4cd rhs = Vector4cd::Zero();
+
+    // Get constants and vectors
+    Vector3D kp1v = kp1;
+    Vector3D kp2v = kp2;
+    complexd mu1 = m1.mu;
+    complexd mu2 = m2.mu;
+
+    // --- Build Matrix M and Vector rhs ---
+
+    // Eq 1: Continuity of E_x
+    // (1)Ar1x + (0)Ar1z + (-1)Ap2x + (0)Ap2z = -Ap1x
+    M(0, 0) = 1.0;
+    M(0, 2) = -1.0;
+    rhs(0) = -Ap1x;
+
+    // Eq 2: Continuity of H_y
+    // H_y = (-j/mu) * (k_z*A_x - k_x*A_z)
+    // (1/mu1)(k_p1z*Ap1x - k_p1x*Ap1z) + (1/mu1)(-k_p1z*Ar1x - k_p1x*Ar1z) = (1/mu2)(k_p2z*Ap2x - k_p1x*Ap2z)
+    // Rearranged:
+    // (-k_p1z/mu1)Ar1x + (-k_p1x/mu1)Ar1z + (-k_p2z/mu2)Ap2x + (k_p1x/mu2)Ap2z = -(1/mu1)(k_p1z*Ap1x - k_p1x*Ap1z)
+    M(1, 0) = -kp1v.z / mu1;
+    M(1, 1) = -kp1v.x / mu1;
+    M(1, 2) = -kp2v.z / mu2;
+    M(1, 3) = kp1v.x / mu2;
+    rhs(1) = -(kp1v.z * Ap1x - kp1v.x * Ap1z) / mu1;
+
+    // Eq 3: Reflected TEM (Ar1 . k_r1 = 0)
+    // k_r1 = (k_p1x, 0, -k_p1z)
+    // (k_p1x)Ar1x + (-k_p1z)Ar1z = 0
+    M(2, 0) = kp1v.x;
+    M(2, 1) = -kp1v.z;
+    rhs(2) = 0.0;
+
+    // Eq 4: Transmitted TEM (Ap2 . k_p2 = 0)
+    // k_p2 = (k_p1x, 0, k_p2z)
+    // (k_p1x)Ap2x + (k_p2z)Ap2z = 0
+    M(3, 2) = kp1v.x;
+    M(3, 3) = kp2v.z;
+    rhs(3) = 0.0;
+
+
+    // === Solve 4x4 Linear System using Eigen ===
+    Eigen::FullPivLU<Matrix4cd> lu(M);
+
+    if (!lu.isInvertible()) {
+        throw runtime_error("Sistema lineare TM singolare o mal condizionato (Eigen).");
+    }
+
+    Vector4cd solu = lu.solve(rhs);
+
+    // Extract solution
+    Solution sol;
+    sol.Ar1 = Vector3D(solu(0), complexd(0.0), solu(1));
+    sol.Ap2 = Vector3D(solu(2), complexd(0.0), solu(3));
+
+    return calculate_power(sol);
+}
+
+
+
+
+
+/*
+
+///  VERSIONE CON FORMULE CHIUSE ////
 Solution solve_TM() {
     // === Costanti e dati noti ===
     complexd Ap1x = Ap1.x;
@@ -508,7 +374,7 @@ Solution solve_TM() {
         (Kp1vz * Kp1vz) * (Kp2vz * Kp2vz) * K1 * mu2 +
         (Kp1vz * Kp1vz) * (Kp2vz * Kp2vz) * mu1;
 
-    // === Numeratori (formule dal PDF) ===
+    // === Numeratori  ===
 
     // A_r1x
     complexd num_Ar1x =
@@ -559,6 +425,14 @@ Solution solve_TM() {
 
     return calculate_power(sol);
 }
+
+
+
+
+*/
+
+
+
 
 
 
@@ -639,9 +513,20 @@ int main() {
             Ap1 = Vector3D(0.0, complexd(ar, ai), 0.0);
         }
         else {
-            cout << "Inserire ampiezza complessa Ap1_x (parte reale): "; double arx, aix; cin >> arx; cout << " (parte immaginaria): "; cin >> aix;
-            cout << "Inserire ampiezza complessa Ap1_z (parte reale): "; double arz, aiz; cin >> arz; cout << " (parte immaginaria): "; cin >> aiz;
-            Ap1 = Vector3D(complexd(arx, aix), complexd(0.0), complexd(arz, aiz));
+            
+            cout << "Inserire ampiezza totale TM (A_tot) (parte reale): "; double ar, ai; cin >> ar; cout << " (parte immaginaria): "; cin >> ai;
+            complexd A_total = complexd(ar, ai);
+
+            // Calcola automaticamente le componenti Ap1x e Ap1z per garantire la condizione TEM
+            // A_p1 deve essere ortogonale a k_p1 = (k1*sin_i, 0, k1*cos_i)
+            // Il vettore ortogonale nel piano x-z è A_p1_dir = (cos_i, 0, -sin_i)
+            double theta_i_rad = theta_i * PI / 180.0;
+            complexd Ap1x = A_total * cos(theta_i_rad);
+            complexd Ap1z = A_total * (-sin(theta_i_rad));
+            Ap1 = Vector3D(Ap1x, complexd(0.0), Ap1z);
+
+            cout << "  -> Calcolata Ap1.x = " << cstr(Ap1x) << "\n";
+            cout << "  -> Calcolata Ap1.z = " << cstr(Ap1z) << "\n";
         }
 
 

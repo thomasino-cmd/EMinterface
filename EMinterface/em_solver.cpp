@@ -144,53 +144,53 @@ private:
     
 
 
+    //
+    //// Solve TE case using 2x2 linear system 
+    //Solution solve_TE() {
+    //    // unknowns: Ar1y, Ap2y
+    //    complexd Ap1y = Ap1.y;
+    //    complexd kp1z = kp1.z;
+    //    complexd kr1z = kr1.z;
+    //    complexd kp2z = kp2.z;
+    //    complexd mu1 = m1.mu;
+    //    complexd mu2 = m2.mu;
+
+    //    // Equations:
+    //    // 1) Ap1y + Ar1y - Ap2y = 0
+    //    // 2) (kp1z*Ap1y + kr1z*Ar1y)/mu1 - (kp2z*Ap2y)/mu2 = 0
+
+    //    // matrix form M * [Ar1y, Ap2y]^T = rhs
+    //    // from 1) Ar1y - Ap2y = -Ap1y
+    //    // from 2) (kr1z/mu1) * Ar1y + (-kp2z/mu2) * Ap2y = -kp1z*Ap1y / mu1
+
+    //    complexd a11 = complexd(1.0);               // Ar1y coef from eq1
+    //    complexd a12 = complexd(-1.0);              // Ap2y coef from eq1
+    //    complexd b1 = -Ap1y;
+
+    //    complexd a21 = kr1z / mu1;
+    //    complexd a22 = -kp2z / mu2;
+    //    complexd b2 = -(kp1z * Ap1y) / mu1;
+
+    //    // Solve 2x2
+    //    complexd det = a11 * a22 - a12 * a21;
+    //    if (abs(det) < EPS) throw runtime_error("Sistema singolare (TE).");
+    //    complexd Ar1y = (b1 * a22 - a12 * b2) / det;
+    //    complexd Ap2y = (a11 * b2 - b1 * a21) / det;
+
+    //    Solution sol;
+    //    sol.Ar1 = Vector3D(complexd(0.0), Ar1y, complexd(0.0));
+    //    sol.Ap2 = Vector3D(complexd(0.0), Ap2y, complexd(0.0));
+
+    //    // Power calculations
+    //    return calculate_power(sol);
+    //}
+    //
+
+
+
+
+
     
-    // Solve TE case using 2x2 linear system 
-    Solution solve_TE() {
-        // unknowns: Ar1y, Ap2y
-        complexd Ap1y = Ap1.y;
-        complexd kp1z = kp1.z;
-        complexd kr1z = kr1.z;
-        complexd kp2z = kp2.z;
-        complexd mu1 = m1.mu;
-        complexd mu2 = m2.mu;
-
-        // Equations:
-        // 1) Ap1y + Ar1y - Ap2y = 0
-        // 2) (kp1z*Ap1y + kr1z*Ar1y)/mu1 - (kp2z*Ap2y)/mu2 = 0
-
-        // matrix form M * [Ar1y, Ap2y]^T = rhs
-        // from 1) Ar1y - Ap2y = -Ap1y
-        // from 2) (kr1z/mu1) * Ar1y + (-kp2z/mu2) * Ap2y = -kp1z*Ap1y / mu1
-
-        complexd a11 = complexd(1.0);               // Ar1y coef from eq1
-        complexd a12 = complexd(-1.0);              // Ap2y coef from eq1
-        complexd b1 = -Ap1y;
-
-        complexd a21 = kr1z / mu1;
-        complexd a22 = -kp2z / mu2;
-        complexd b2 = -(kp1z * Ap1y) / mu1;
-
-        // Solve 2x2
-        complexd det = a11 * a22 - a12 * a21;
-        if (abs(det) < EPS) throw runtime_error("Sistema singolare (TE).");
-        complexd Ar1y = (b1 * a22 - a12 * b2) / det;
-        complexd Ap2y = (a11 * b2 - b1 * a21) / det;
-
-        Solution sol;
-        sol.Ar1 = Vector3D(complexd(0.0), Ar1y, complexd(0.0));
-        sol.Ap2 = Vector3D(complexd(0.0), Ap2y, complexd(0.0));
-
-        // Power calculations
-        return calculate_power(sol);
-    }
-    
-
-
-
-
-
-    /*
     //per ora preferisco risolvere direttamente con le formule chiuse
     Solution solve_TE() {
         // Dati noti
@@ -256,8 +256,7 @@ private:
     }
 
 
-    */
-
+ 
 
 
 

@@ -95,14 +95,14 @@ public:
 
     Solution solve() {
 
-        /*
+        
         cerr << "DEBUG k-vectors:\n";
         cerr << "k1 = " << m1.k << "\n";
         cerr << "k2 = " << m2.k << "\n";
         cerr << "kp1 = (" << kp1.x << ", " << kp1.y << ", " << kp1.z << ")\n";
         cerr << "kp2 = (" << kp2.x << ", " << kp2.y << ", " << kp2.z << ")\n";
         cerr << "kx = " << kp1.x << "\n";
-        */
+       
         if (isTE) return solve_TE();
         else return solve_TM();
     }
@@ -144,291 +144,438 @@ private:
     
 
 
-    //
-    //// Solve TE case using 2x2 linear system 
-    //Solution solve_TE() {
-    //    // unknowns: Ar1y, Ap2y
-    //    complexd Ap1y = Ap1.y;
-    //    complexd kp1z = kp1.z;
-    //    complexd kr1z = kr1.z;
-    //    complexd kp2z = kp2.z;
-    //    complexd mu1 = m1.mu;
-    //    complexd mu2 = m2.mu;
-
-    //    // Equations:
-    //    // 1) Ap1y + Ar1y - Ap2y = 0
-    //    // 2) (kp1z*Ap1y + kr1z*Ar1y)/mu1 - (kp2z*Ap2y)/mu2 = 0
-
-    //    // matrix form M * [Ar1y, Ap2y]^T = rhs
-    //    // from 1) Ar1y - Ap2y = -Ap1y
-    //    // from 2) (kr1z/mu1) * Ar1y + (-kp2z/mu2) * Ap2y = -kp1z*Ap1y / mu1
-
-    //    complexd a11 = complexd(1.0);               // Ar1y coef from eq1
-    //    complexd a12 = complexd(-1.0);              // Ap2y coef from eq1
-    //    complexd b1 = -Ap1y;
-
-    //    complexd a21 = kr1z / mu1;
-    //    complexd a22 = -kp2z / mu2;
-    //    complexd b2 = -(kp1z * Ap1y) / mu1;
-
-    //    // Solve 2x2
-    //    complexd det = a11 * a22 - a12 * a21;
-    //    if (abs(det) < EPS) throw runtime_error("Sistema singolare (TE).");
-    //    complexd Ar1y = (b1 * a22 - a12 * b2) / det;
-    //    complexd Ap2y = (a11 * b2 - b1 * a21) / det;
-
-    //    Solution sol;
-    //    sol.Ar1 = Vector3D(complexd(0.0), Ar1y, complexd(0.0));
-    //    sol.Ap2 = Vector3D(complexd(0.0), Ap2y, complexd(0.0));
-
-    //    // Power calculations
-    //    return calculate_power(sol);
-    //}
-    //
-
-
-
-
-
     
-    //per ora preferisco risolvere direttamente con le formule chiuse
+    // Solve TE case using 2x2 linear system 
     Solution solve_TE() {
-        // Dati noti
+        // unknowns: Ar1y, Ap2y
         complexd Ap1y = Ap1.y;
-        complexd K1 = m1.k;
-        complexd K2 = m2.k;
+        complexd kp1z = kp1.z;
+        complexd kr1z = kr1.z;
+        complexd kp2z = kp2.z;
         complexd mu1 = m1.mu;
         complexd mu2 = m2.mu;
 
-        complexd Kp1z = kp1.z;
-        complexd Kp2z = kp2.z;
+        // Equations:
+        // 1) Ap1y + Ar1y - Ap2y = 0
+        // 2) (kp1z*Ap1y + kr1z*Ar1y)/mu1 - (kp2z*Ap2y)/mu2 = 0
 
-      
-        complexd denom = Kp1z * mu2 + Kp2z * mu1;
+        // matrix form M * [Ar1y, Ap2y]^T = rhs
+        // from 1) Ar1y - Ap2y = -Ap1y
+        // from 2) (kr1z/mu1) * Ar1y + (-kp2z/mu2) * Ap2y = -kp1z*Ap1y / mu1
 
-       
-        // metto Tolleranza relativa per evitare divisioni per numeri troppo piccoli 
-        double tol = 1e-14;
-        double scale = (double)abs(denom);
-        if (scale < 1e-30) scale = 1.0;
+        complexd a11 = complexd(1.0);               // Ar1y coef from eq1
+        complexd a12 = complexd(-1.0);              // Ap2y coef from eq1
+        complexd b1 = -Ap1y;
+
+        complexd a21 = kr1z / mu1;
+        complexd a22 = -kp2z / mu2;
+        complexd b2 = -(kp1z * Ap1y) / mu1;
+
+        // Solve 2x2
+        complexd det = a11 * a22 - a12 * a21;
+        if (abs(det) < EPS) throw runtime_error("Sistema singolare (TE).");
+        complexd Ar1y = (b1 * a22 - a12 * b2) / det;
+        complexd Ap2y = (a11 * b2 - b1 * a21) / det;
 
         Solution sol;
+        sol.Ar1 = Vector3D(complexd(0.0), Ar1y, complexd(0.0));
+        sol.Ap2 = Vector3D(complexd(0.0), Ap2y, complexd(0.0));
 
-        if (abs(denom) > tol * scale) {
-           
-            complexd Ap2y = (complexd(2.0, 0.0) * Kp1z * mu2 / denom) * Ap1y;                    // (3.11)
-            complexd Ar1y = ((Kp1z * mu2 - Kp2z * mu1) / denom) * Ap1y;                        // (3.12)
-
-            sol.Ap2 = Vector3D(complexd(0.0), Ap2y, complexd(0.0));
-            sol.Ar1 = Vector3D(complexd(0.0), Ar1y, complexd(0.0));
-            return calculate_power(sol);
-        }
-        else {
-            //////////////////// PROBABILMENTE NON NECESSARIO //////////////////////
-            
-            // Fallback numerico stabile: calcola i coefficienti di Fresnel tramite impedenze (
-            complexd cos_i = Kp1z / K1;   // cos(theta_i) in termini di k
-            complexd cos_t = Kp2z / K2;   // cos(theta_t) in termini di k
-            complexd Z1 = m1.Z;
-            complexd Z2 = m2.Z;
-
-            complexd den_r = Z2 * cos_i + Z1 * cos_t;
-            if (abs(den_r) < 1e-30) {
-                // ultima risorsa: evita crash e segnala ritorno (riflessione totale simulata)
-                cerr << "solve_TE fallback: denominatore Fresnel quasi zero. Restituisco riflessione totale.\n";
-                sol.Ap2 = Vector3D(complexd(0.0), complexd(0.0), complexd(0.0));
-                sol.Ar1 = Vector3D(complexd(0.0), Ap1y, complexd(0.0));
-                return calculate_power(sol);
-            }
-
-            complexd rTE = (Z2 * cos_i - Z1 * cos_t) / den_r;
-            complexd tTE = (complexd(2.0) * Z2 * cos_i) / den_r;
-
-            sol.Ar1 = Vector3D(complexd(0.0), rTE * Ap1y, complexd(0.0));
-            sol.Ap2 = Vector3D(complexd(0.0), tTE * Ap1y, complexd(0.0));
-
-            // Debug (commenta se non desideri output)
-            cerr << "[solve_TE fallback] denom troppo piccolo: |denom|=" << abs(denom)
-                << ", using Fresnel rTE=" << rTE << ", tTE=" << tTE << "\n";
-
-            return calculate_power(sol);
-        }
+        // Power calculations
+        return calculate_power(sol);
     }
+    
+
+
+
+
+
+    //
+    ////per ora preferisco risolvere direttamente con le formule chiuse
+    //Solution solve_TE() {
+    //    // Dati noti
+    //    complexd Ap1y = Ap1.y;
+    //    complexd K1 = m1.k;
+    //    complexd K2 = m2.k;
+    //    complexd mu1 = m1.mu;
+    //    complexd mu2 = m2.mu;
+    //    complexd Kp1z = kp1.z;
+    //    complexd Kp2z = kp2.z;
+    //  
+    //    complexd denom = Kp1z * mu2 + Kp2z * mu1;
+    //   
+    //    // metto Tolleranza relativa per evitare divisioni per numeri troppo piccoli 
+    //    double tol = 1e-14;
+    //    double scale = (double)abs(denom);
+    //    if (scale < 1e-30) scale = 1.0;
+
+    //    Solution sol;
+
+    //    if (abs(denom) > tol * scale) {
+    //       
+    //        complexd Ap2y = (complexd(2.0, 0.0) * Kp1z * mu2 / denom) * Ap1y;                    // (3.11)
+    //        complexd Ar1y = ((Kp1z * mu2 - Kp2z * mu1) / denom) * Ap1y;                        // (3.12)
+
+    //        sol.Ap2 = Vector3D(complexd(0.0), Ap2y, complexd(0.0));
+    //        sol.Ar1 = Vector3D(complexd(0.0), Ar1y, complexd(0.0));
+    //        return calculate_power(sol);
+    //    }
+    //    else {
+    //        //////////////////// PROBABILMENTE NON NECESSARIO //////////////////////
+    //        
+    //        // Fallback numerico stabile: calcola i coefficienti di Fresnel tramite impedenze (
+    //        complexd cos_i = Kp1z / K1;   // cos(theta_i) in termini di k
+    //        complexd cos_t = Kp2z / K2;   // cos(theta_t) in termini di k
+    //        complexd Z1 = m1.Z;
+    //        complexd Z2 = m2.Z;
+
+    //        complexd den_r = Z2 * cos_i + Z1 * cos_t;
+    //        if (abs(den_r) < 1e-30) {
+    //            // ultima risorsa: evita crash e segnala ritorno (riflessione totale simulata)
+    //            cerr << "solve_TE fallback: denominatore Fresnel quasi zero. Restituisco riflessione totale.\n";
+    //            sol.Ap2 = Vector3D(complexd(0.0), complexd(0.0), complexd(0.0));
+    //            sol.Ar1 = Vector3D(complexd(0.0), Ap1y, complexd(0.0));
+    //            return calculate_power(sol);
+    //        }
+
+    //        complexd rTE = (Z2 * cos_i - Z1 * cos_t) / den_r;
+    //        complexd tTE = (complexd(2.0) * Z2 * cos_i) / den_r;
+
+    //        sol.Ar1 = Vector3D(complexd(0.0), rTE * Ap1y, complexd(0.0));
+    //        sol.Ap2 = Vector3D(complexd(0.0), tTE * Ap1y, complexd(0.0));
+
+    //        // Debug (commenta se non desideri output)
+    //        cerr << "[solve_TE fallback] denom troppo piccolo: |denom|=" << abs(denom)
+    //            << ", using Fresnel rTE=" << rTE << ", tTE=" << tTE << "\n";
+
+    //        return calculate_power(sol);
+    //    }
+    //}
 
 
  
 
 
+//
+//
+//
+//
+//                    //// FUNZIONANTE ////
+//                      /// !!!! !!! ///
+//
+//    // ========================================================================
+//    // NEW solve_TM IMPLEMENTATION (using Eigen)
+//    // This function implements the physically correct 4x4 linear system
+//    // derived from Maxwell's boundary conditions for the TM case.
+//    //
+//    // System: M * x = rhs
+//    // Unknowns: x = [Ar1x, Ar1z, Ap2x, Ap2z]^T
+//    //
+//    // Equations:
+//    // 1. Continuity of E_x:     Ap1x + Ar1x = Ap2x
+//    // 2. Continuity of H_y:     (1/mu1)(k_p1 x Ap1)_y + (1/mu1)(k_r1 x Ar1)_y = (1/mu2)(k_p2 x Ap2)_y
+//    // 3. Reflected TEM:         Ar1 . k_r1 = 0
+//    // 4. Transmitted TEM:       Ap2 . k_p2 = 0
+//    // ========================================================================
+//Solution solve_TM() {
+//    // Known: Ap1.x and Ap1.z 
+//    complexd Ap1x = Ap1.x;
+//    complexd Ap1z = Ap1.z;
+//
+//    // Unknowns vector x = [Ar1x, Ar1z, Ap2x, Ap2z]
+//    Matrix4cd M = Matrix4cd::Zero();
+//    Vector4cd rhs = Vector4cd::Zero();
+//
+//    // Get constants and vectors
+//    Vector3D kp1v = kp1;
+//    Vector3D kp2v = kp2;
+//    complexd mu1 = m1.mu;
+//    complexd mu2 = m2.mu;
+//
+//    // --- Build Matrix M and Vector rhs ---
+//
+//    // Eq 1: Continuity of E_x
+//    // (1)Ar1x + (0)Ar1z + (-1)Ap2x + (0)Ap2z = -Ap1x
+//    M(0, 0) = 1.0;
+//    M(0, 2) = -1.0;
+//    rhs(0) = -Ap1x;
+//
+//    // Eq 2: Continuity of H_y
+//    // H_y = (-j/mu) * (k_z*A_x - k_x*A_z)
+//    // (1/mu1)(k_p1z*Ap1x - k_p1x*Ap1z) + (1/mu1)(-k_p1z*Ar1x - k_p1x*Ar1z) = (1/mu2)(k_p2z*Ap2x - k_p1x*Ap2z)
+//    // Rearranged:
+//    // (-k_p1z/mu1)Ar1x + (-k_p1x/mu1)Ar1z + (-k_p2z/mu2)Ap2x + (k_p1x/mu2)Ap2z = -(1/mu1)(k_p1z*Ap1x - k_p1x*Ap1z)
+//    M(1, 0) = -kp1v.z / mu1;
+//    M(1, 1) = -kp1v.x / mu1;
+//    M(1, 2) = -kp2v.z / mu2;
+//    M(1, 3) = kp1v.x / mu2;
+//    rhs(1) = -(kp1v.z * Ap1x - kp1v.x * Ap1z) / mu1;
+//
+//    // Eq 3: Reflected TEM (Ar1 . k_r1 = 0)
+//    // k_r1 = (k_p1x, 0, -k_p1z)
+//    // (k_p1x)Ar1x + (-k_p1z)Ar1z = 0
+//    M(2, 0) = kp1v.x;
+//    M(2, 1) = -kp1v.z;
+//    rhs(2) = 0.0;
+//
+//    // Eq 4: Transmitted TEM (Ap2 . k_p2 = 0)
+//    // k_p2 = (k_p1x, 0, k_p2z)
+//    // (k_p1x)Ap2x + (k_p2z)Ap2z = 0
+//    M(3, 2) = kp1v.x;
+//    M(3, 3) = kp2v.z;
+//    rhs(3) = 0.0;
+//
+//
+//    // === Solve 4x4 Linear System using Eigen ===
+//    Eigen::FullPivLU<Matrix4cd> lu(M);
+//
+//    if (!lu.isInvertible()) {
+//        throw runtime_error("Sistema lineare TM singolare o mal condizionato (Eigen).");
+//    }
+//
+//    Vector4cd solu = lu.solve(rhs);
+//
+//    // Extract solution
+//    Solution sol;
+//    sol.Ar1 = Vector3D(solu(0), complexd(0.0), solu(1));
+//    sol.Ap2 = Vector3D(solu(2), complexd(0.0), solu(3));
+//
+//    return calculate_power(sol);
+//}
 
 
 
 
-                    //// FUNZIONANTE ////
-                      /// !!!! !!! ///
 
-    // ========================================================================
-    // NEW solve_TM IMPLEMENTATION (using Eigen)
-    // This function implements the physically correct 4x4 linear system
-    // derived from Maxwell's boundary conditions for the TM case.
-    //
-    // System: M * x = rhs
-    // Unknowns: x = [Ar1x, Ar1z, Ap2x, Ap2z]^T
-    //
-    // Equations:
-    // 1. Continuity of E_x:     Ap1x + Ar1x = Ap2x
-    // 2. Continuity of H_y:     (1/mu1)(k_p1 x Ap1)_y + (1/mu1)(k_r1 x Ar1)_y = (1/mu2)(k_p2 x Ap2)_y
-    // 3. Reflected TEM:         Ar1 . k_r1 = 0
-    // 4. Transmitted TEM:       Ap2 . k_p2 = 0
-    // ========================================================================
-Solution solve_TM() {
-    // Known: Ap1.x and Ap1.z 
+
+
+
+
+
+
+//
+//
+/////  VERSIONE CON FORMULE CHIUSE (nuova, con diagnostica e check fisici)  ///
+//Solution solve_TM() {
+//    // === Costanti e dati noti ===
+//    complexd Ap1x = Ap1.x;
+//    complexd Ap1z = Ap1.z;
+//
+//    complexd K1 = m1.k;
+//    complexd mu1 = m1.mu;
+//    complexd mu2 = m2.mu;
+//
+//    complexd Kp1vx = kp1.x;
+//    complexd Kp1vz = kp1.z;
+//    complexd Kp2vz = kp2.z;
+//
+//    // -----------------------------------------------------------------
+//    // Tolleranze e utilità
+//    // -----------------------------------------------------------------
+//    const double EPS_ABS = 1e-14;       // soglia per considerare "quasi zero"
+//    const double EPS_LOSSLESS = 1e-12;  // soglia per considerare parte immaginaria nulla
+//    auto abs_complex = [](const complexd& z) { return std::abs(z); };
+//    auto is_almost_zero = [&](const complexd& z, double tol) {
+//        return std::abs(z) < tol;
+//        };
+//    auto sqnorm = [&](const complexd& z) { return std::norm(z); }; // |z|^2
+//
+//    // =====================================================
+//    // === sigma2 (denominatore comune) ===================
+//    // =====================================================
+//    complexd sigma2 =
+//        mu1 * (K1 * K1) * (Kp1vx * Kp1vx) * Kp1vz
+//        + mu2 * K1 * Kp2vz * (Kp1vx * Kp1vx)
+//        + mu2 * K1 * Kp2vz * (Kp1vz * Kp1vz)
+//        + mu1 * (Kp2vz * Kp2vz) * Kp1vz;
+//
+//    // controllo sigma2 quasi-zero
+//    if (is_almost_zero(sigma2, EPS_ABS)) {
+//        std::cerr << "[WARN] sigma2 è quasi zero (|sigma2| = " << std::scientific << abs_complex(sigma2)
+//            << "). Applico soft-regularization per evitare divisione per zero.\n";
+//        // soft-regularization: aggiungo una piccola parte reale
+//        sigma2 += complexd(EPS_ABS, 0.0);
+//    }
+//
+//    // =====================================================
+//    // === sigma1 =========================================
+//    // =====================================================
+//    complexd sigma1 =
+//        (Ap1z * K1 * Kp2vz * Kp1vx * Kp1vz * mu2) / sigma2;
+//
+//    // =====================================================
+//    // === Calcolo ampiezze esattamente come da formule ====
+//    // =====================================================
+//
+//    // A_r1x
+//    complexd Ar1x =
+//        (Ap1x * K1 * Kp2vz * (Kp1vz * Kp1vz) * mu2) / sigma2
+//        - (Ap1x * (Kp2vz * Kp2vz) * Kp1vz * mu1) / sigma2
+//        - (Ap1x * (K1 * K1) * (Kp1vx * Kp1vx) * Kp1vz * mu1) / sigma2
+//        - sigma1;
+//
+//    // A_r1z
+//    complexd Ar1z =
+//        (Ap1x * K1 * Kp2vz * Kp1vx * Kp1vz * mu2) / sigma2
+//        - (Ap1x * (K1 * K1) * (Kp1vx * Kp1vx * Kp1vx) * mu1) / sigma2
+//        - (Ap1z * K1 * Kp2vz * (Kp1vx * Kp1vx) * mu2) / sigma2
+//        - (Ap1x * (Kp2vz * Kp2vz) * Kp1vx * mu1) / sigma2;
+//
+//    // A_p2x
+//    complexd Ap2x =
+//        (Ap1x * K1 * Kp2vz * (Kp1vx * Kp1vx) * mu2) / sigma2
+//        + (2.0 * Ap1x * K1 * Kp2vz * (Kp1vz * Kp1vz) * mu2) / sigma2
+//        - sigma1;
+//
+//    // A_p2z
+//    complexd Ap2z =
+//        (Ap1z * (K1 * K1) * (Kp1vx * Kp1vx) * Kp1vz * mu2) / sigma2
+//        - (2.0 * Ap1x * (K1 * K1) * Kp1vx * (Kp1vz * Kp1vz) * mu2) / sigma2
+//        - (Ap1x * (K1 * K1) * (Kp1vx * Kp1vx * Kp1vx) * mu2) / sigma2;
+//
+//    // === incapsulamento risultato ===
+//    Solution sol;
+//    sol.Ar1 = Vector3D(Ar1x, complexd(0.0), Ar1z);
+//    sol.Ap2 = Vector3D(Ap2x, complexd(0.0), Ap2z);
+//
+//    // =====================================================
+//    // === CONTROLLI FISICI / DIAGNOSTICI (stampe) ========
+//    // =====================================================
+//
+//    // semplice misura energia numerica (non tiene conto di impedenze/angoli)
+//    double incident_pow = double(sqnorm(Ap1x) + sqnorm(Ap1z));
+//    double reflected_pow = double(sqnorm(Ar1x) + sqnorm(Ar1z));
+//    double transmitted_pow = double(sqnorm(Ap2x) + sqnorm(Ap2z));
+//    double total_out_pow = reflected_pow + transmitted_pow;
+//
+//    // rileva se i mezzi sono (quasi) lossless
+//    bool lossless_guess =
+//        std::abs(std::imag(mu1)) < EPS_LOSSLESS &&
+//        std::abs(std::imag(mu2)) < EPS_LOSSLESS &&
+//        std::abs(std::imag(K1)) < EPS_LOSSLESS &&
+//        std::abs(std::imag(Kp1vx)) < EPS_LOSSLESS &&
+//        std::abs(std::imag(Kp1vz)) < EPS_LOSSLESS &&
+//        std::abs(std::imag(Kp2vz)) < EPS_LOSSLESS;
+//
+//    // incidenza normale se la componente trasversale (qui guess Kp1vx) è quasi zero
+//    bool normal_incidence = std::abs(Kp1vx) < 1e-12;
+//
+//    // stampa diagnostica sommaria
+//    std::cerr << std::fixed;
+//    std::cerr << "[DIAG] incident |A|^2 = " << incident_pow
+//        << "  reflected |A|^2 = " << reflected_pow
+//        << "  transmitted |A|^2 = " << transmitted_pow << "\n";
+//
+//    if (incident_pow <= 0.0) {
+//        std::cerr << "[WARN] Potenza incidente numerica nulla (|Ap1|^2 = 0). Controlla Ap1x/Ap1z.\n";
+//    }
+//    else {
+//        double ratio = total_out_pow / incident_pow;
+//        std::cerr << "[DIAG] (|Ar|^2 + |Ap2|^2) / |Ap1|^2 = " << ratio << "\n";
+//
+//        // Se sembra lossless, aspettiamoci ratio ~ 1 (con cautela)
+//        if (lossless_guess) {
+//            if (std::abs(ratio - 1.0) > 1e-6) {
+//                std::cerr << "[WARN] Mezzi appaiono lossless ma (ref+trans)/inc != 1 (delta = "
+//                    << (ratio - 1.0) << "\n";
+//            }
+//            else {
+//                std::cerr << "[OK] Lossless guess e bilancio energetico (rapporto ~1) soddisfatto entro tolleranza.\n";
+//            }
+//        }
+//        else {
+//            std::cerr << "[INFO] Almeno uno dei parametri ha parte immaginaria significativa: assorbimento o perdita presente.\n";
+//        }
+//
+//        // se in incidenza normale e lossless, possiamo fare confronto con la semplice aspettativa di conservazione
+//        if (normal_incidence && lossless_guess) {
+//            std::cerr << "[INFO] Incidenza normale + lossless. Aspettativa qualitativa: (ref+trans)/inc ~ 1.\n";
+//        }
+//    }
+//
+//    // controllo di consistenza numerica su sigma1
+//    if (std::isnan(std::real(sigma1)) || std::isnan(std::imag(sigma1))) {
+//        std::cerr << "[ERROR] sigma1 è NaN dopo il calcolo. Controlla input per valori inf/nan.\n";
+//    }
+//
+//    // avvisi su valori anomali dei parametri (semplici heuristics)
+//    if (std::abs(mu1) > 1e6 || std::abs(mu2) > 1e6) {
+//        std::cerr << "[WARN] mu molto grande (" << mu1 << ", " << mu2 << "). Controlla unità/dati.\n";
+//    }
+//
+//    if (std::abs(Kp1vx) < 1e-12) {
+//        std::cerr << "[INFO] Kp1vx ~ 0 -> incidenza prossima alla normale.\n";
+//    }
+//
+//    if (std::abs(Kp2vz) < 1e-14) {
+//        std::cerr << "[WARN] Kp2vz molto piccolo -> possibile condizione di angolo critico o numerica.\n";
+//    }
+//
+//    // restituisco il risultato come prima (la funzione calculate_power rimane il punto centrale)
+//    return calculate_power(sol);
+//}
+//
+
+
+
+
+// TOLGO PER IL MOMENTO ULTIMA VERSIONE NON ANCORA FUNZIONANTE
+
+
+
+//nE FACCIO UNA NUOVA CHE TECNICAMENTE USA LE STESSE FORMULE DI MATLAB MA PRE SEMPLIFICAZIONE 
+
+Solution solve_TM()
+{
+    cout<< "Solving TM case using direct closed-form formulas diocane...\n";
+  
     complexd Ap1x = Ap1.x;
     complexd Ap1z = Ap1.z;
 
-    // Unknowns vector x = [Ar1x, Ar1z, Ap2x, Ap2z]
-    Matrix4cd M = Matrix4cd::Zero();
-    Vector4cd rhs = Vector4cd::Zero();
 
-    // Get constants and vectors
-    Vector3D kp1v = kp1;
-    Vector3D kp2v = kp2;
-    complexd mu1 = m1.mu;
-    complexd mu2 = m2.mu;
-
-    // --- Build Matrix M and Vector rhs ---
-
-    // Eq 1: Continuity of E_x
-    // (1)Ar1x + (0)Ar1z + (-1)Ap2x + (0)Ap2z = -Ap1x
-    M(0, 0) = 1.0;
-    M(0, 2) = -1.0;
-    rhs(0) = -Ap1x;
-
-    // Eq 2: Continuity of H_y
-    // H_y = (-j/mu) * (k_z*A_x - k_x*A_z)
-    // (1/mu1)(k_p1z*Ap1x - k_p1x*Ap1z) + (1/mu1)(-k_p1z*Ar1x - k_p1x*Ar1z) = (1/mu2)(k_p2z*Ap2x - k_p1x*Ap2z)
-    // Rearranged:
-    // (-k_p1z/mu1)Ar1x + (-k_p1x/mu1)Ar1z + (-k_p2z/mu2)Ap2x + (k_p1x/mu2)Ap2z = -(1/mu1)(k_p1z*Ap1x - k_p1x*Ap1z)
-    M(1, 0) = -kp1v.z / mu1;
-    M(1, 1) = -kp1v.x / mu1;
-    M(1, 2) = -kp2v.z / mu2;
-    M(1, 3) = kp1v.x / mu2;
-    rhs(1) = -(kp1v.z * Ap1x - kp1v.x * Ap1z) / mu1;
-
-    // Eq 3: Reflected TEM (Ar1 . k_r1 = 0)
-    // k_r1 = (k_p1x, 0, -k_p1z)
-    // (k_p1x)Ar1x + (-k_p1z)Ar1z = 0
-    M(2, 0) = kp1v.x;
-    M(2, 1) = -kp1v.z;
-    rhs(2) = 0.0;
-
-    // Eq 4: Transmitted TEM (Ap2 . k_p2 = 0)
-    // k_p2 = (k_p1x, 0, k_p2z)
-    // (k_p1x)Ap2x + (k_p2z)Ap2z = 0
-    M(3, 2) = kp1v.x;
-    M(3, 3) = kp2v.z;
-    rhs(3) = 0.0;
-
-
-    // === Solve 4x4 Linear System using Eigen ===
-    Eigen::FullPivLU<Matrix4cd> lu(M);
-
-    if (!lu.isInvertible()) {
-        throw runtime_error("Sistema lineare TM singolare o mal condizionato (Eigen).");
-    }
-
-    Vector4cd solu = lu.solve(rhs);
-
-    // Extract solution
-    Solution sol;
-    sol.Ar1 = Vector3D(solu(0), complexd(0.0), solu(1));
-    sol.Ap2 = Vector3D(solu(2), complexd(0.0), solu(3));
-
-    return calculate_power(sol);
-}
-
-
-
-
-
-/*
-
-///  VERSIONE CON FORMULE CHIUSE ////
-Solution solve_TM() {
-    // === Costanti e dati noti ===
-    complexd Ap1x = Ap1.x;
-    complexd Ap1z = Ap1.z;
-
+    complexd kp1vx = kp1.x;
+    complexd kp1vz = kp1.z;
     complexd K1 = m1.k;
+
+    complexd kp2z = kp2.z;
+
     complexd mu1 = m1.mu;
     complexd mu2 = m2.mu;
 
-    complexd Kp1vx = kp1.x;
-    complexd Kp1vz = kp1.z;
-    complexd Kp2vz = kp2.z;
+    //identità geometriche che applico io qua dentro
 
-    // === Denominatore comune ===
-    complexd denom =
-        (Kp1vx * Kp1vx) * (K1 * K1) * (Kp1vz * Kp1vz) * mu1 +
-        (Kp1vx * Kp1vx) * (Kp2vz * Kp2vz) * K1 * mu2 +
-        (Kp1vz * Kp1vz) * (Kp2vz * Kp2vz) * K1 * mu2 +
-        (Kp1vz * Kp1vz) * (Kp2vz * Kp2vz) * mu1;
+    complexd KR1vx = kp1.x;
+    complexd KR1vz = -kp1.z; 
+    complexd Kp2x = m1.k * kp1.x;
 
-    // === Numeratori  ===
+ 
+    // === Calcolo ampiezze riflessa e trasmessa (come nel tuo codice) ===
 
-    // A_r1x
-    complexd num_Ar1x =
-        Kp1vz * (
-            -std::pow(Kp1vx, 2.0) * mu1 * std::pow(K1, 2.0) * Ap1x
-            - Kp1vx * Kp2vz * K1 * mu2 * Ap1z
-            + Kp1vz * Kp2vz * K1 * mu2 * Ap1x
-            - std::pow(Kp2vz, 2.0) * mu1 * Ap1x
-            );
+    //complexd Ar1x =  -((Kp1vz * ((Ap1x * mu1 * (Kp1vx * Kp1vx)) + (Ap1z * mu2 * Kp1vx * Kp2z) + (Ap1x * mu1 * (Kp2z * Kp2z)) - (Ap1x * Kp1vz * mu2 * Kp2z))) / ((mu1 * (Kp1vx * Kp1vx) * Kp1z) + (mu2 * (Kp1vx * Kp1vx) * Kp2z) + (mu2 * (Kp1vz * Kp1vz) * Kp2z) + (mu1 * Kp1vz * (Kp2z * Kp2z)))); 
+    complexd Ar1x = -(kp1vz * (Ap1x * mu1 * kp2z * kp2z + Ap1z * mu2 * kp2z * kp1vx - Ap1x * kp1vz * mu2 * kp2z + Ap1x * mu1 * kp1vx * kp1vx)) / (mu1 * kp2z * kp2z * kp1vz + mu2 * kp2z * kp1vx * kp1vx + mu2 * kp2z * kp1vz * kp1vz + mu1 * kp1vx * kp1vx * kp1vz);
 
-    complexd Ar1x = num_Ar1x / denom;
 
-    // A_r1z
-    complexd num_Ar1z =
-        Kp1vx * (
-            -std::pow(Kp1vx, 2.0) * std::pow(K1, 2.0) * mu1 * Ap1z
-            - Kp1vx * Kp2vz * K1 * mu2 * Ap1z
-            + Kp1vz * Kp2vz * K1 * mu2 * Ap1x
-            - std::pow(Kp2vz, 2.0) * mu1 * Ap1x
-            );
-
-    complexd Ar1z = num_Ar1z / denom;
-
-    // A_p2x
-    complexd num_Ap2x =
-        Kp2vz * K1 * mu2 * (
-            std::pow(Kp1vx, 2.0) * Ap1x
-            + 2.0 * std::pow(Kp1vz, 2.0) * Ap1x
-            - Kp1vx * Kp1vz * Ap1z
-            );
-
-    complexd Ap2x = num_Ap2x / denom;
-
-    // A_p2z
-    complexd num_Ap2z =
-        Kp1vx * std::pow(K1, 2.0) * mu2 * (
-            -std::pow(Kp1vx, 2.0) * Ap1z
-            - 2.0 * std::pow(Kp1vz, 2.0) * Ap1z
-            + Kp1vx * Kp1vz * Ap1x
-            );
-
-    complexd Ap2z = num_Ap2z / denom;
-
-    // === il risultato ===
+    complexd Ar1z = -(kp1vx * (Ap1x * mu1 * kp2z * kp2z + Ap1z * mu2 * kp2z * kp1vx - Ap1x * kp1vz * mu2 * kp2z + Ap1x * mu1 * kp1vx * kp1vx)) / (mu1 * kp2z * kp2z * kp1vz + mu2 * kp2z * kp1vx * kp1vx + mu2 * kp2z * kp1vz * kp1vz + mu1 * kp1vx * kp1vx * kp1vz);
+   
+    
+    
+   complexd Ap2x = (kp2z * mu2 * (Ap1x * kp1vx * kp1vx - Ap1z * kp1vx * kp1vz + 2.0 * Ap1x * kp1vz * kp1vz)) / (mu1 * kp2z * kp2z * kp1vz + mu2 * kp2z * kp1vx * kp1vx + mu2 * kp2z * kp1vz * kp1vz + mu1 * kp1vx * kp1vx * kp1vz);
+    
+   complexd Ap2z = -(kp1vx * mu2 * (Ap1x * kp1vx * kp1vx - Ap1z * kp1vx * kp1vz + 2.0 * Ap1x * kp1vz * kp1vz)) / (mu1 * kp2z * kp2z * kp1vz + mu2 * kp2z * kp1vx * kp1vx + mu2 * kp2z * kp1vz * kp1vz + mu1 * kp1vx * kp1vx * kp1vz);
+    
+    
+    
+    
+    // === Impacchettamento risultato (come nel tuo codice) ===
     Solution sol;
+
     sol.Ar1 = Vector3D(Ar1x, complexd(0.0), Ar1z);
     sol.Ap2 = Vector3D(Ap2x, complexd(0.0), Ap2z);
 
+    // === Calcolo finale della potenza ===
     return calculate_power(sol);
 }
 
-
-
-
-*/
 
 
 

@@ -1,24 +1,21 @@
-﻿#include <iostream>     
+﻿#include <iostream>      
 #include <sstream> 
-#include <iomanip>      
-#include <string>      
-#include <vector>       
-#include <complex>      
+#include <iomanip>       
+#include <string>       
+#include <vector>        
+#include <complex>       
 #include <cmath>        
 #include <stdexcept>    
 #include <algorithm>    
 #include <exception>    
-#include <Eigen/Dense> 
-
-
-
-
+#include <Eigen/Dense>  
 
 using namespace std;
-using namespace Eigen; 
+using namespace Eigen;
 using complexd = complex<double>;
-const double EPS = 1e-12;
 const double PI = acos(-1.0);
+
+// --- Strutture di Base ---
 
 struct Vector3D {
     complexd x = 0.0, y = 0.0, z = 0.0;
@@ -33,39 +30,55 @@ struct Vector3D {
 complexd dot(const Vector3D& a, const Vector3D& b) {
     return a.x * b.x + a.y * b.y + a.z * b.z;
 }
+
 Vector3D cross(const Vector3D& a, const Vector3D& b) {
     return Vector3D(a.y * b.z - a.z * b.y,
         a.z * b.x - a.x * b.z,
         a.x * b.y - a.y * b.x);
 }
+
 string cstr(const complexd& c) {
     ostringstream ss;
-    ss << fixed << setprecision(6);
+    ss << fixed << setprecision(4);
     ss << real(c);
-    if (imag(c) >= 0) ss << " + j" << imag(c);
-    else ss << " - j" << abs(imag(c));
+    if (imag(c) >= 0) ss << "+j" << imag(c);
+    else ss << "-j" << abs(imag(c));
     return ss.str();
 }
 
+// --- Struct Medium Aggiornata (Fisica Corretta) ---
+
 struct Medium {
-    complexd eps; // absolute permittivity
-    complexd mu;  // absolute permeability
-    complexd k;   // scalar wave number (complex)
-    complexd Z;   // wave impedance sqrt(mu/eps)
-    Medium() = default;
-    // eps_r and mu_r are relative complex values; omega in rad/s
-    Medium(complexd eps_r, complexd mu_r, double omega) {
-        const double EPS0 = 8.854187817e-12;
-        const double MU0 = 1.2566370614359173e-6; // correct mu0
-        eps = eps_r * EPS0;
-        mu = mu_r * MU0;
-        // k = omega * sqrt(mu * eps)
-        complexd prod = mu * eps;
-        complexd s = sqrt(prod);
-        k = complexd(omega) * s;
-        // choose sign of k such that Im(k) <= 0 if possible (attenuating)
-        if (imag(k) > 0) k = -k;
-        Z = sqrt(mu / eps);
+    static constexpr double EPS0 = 8.854187817e-12;
+    static constexpr double MU0 = 1.2566370614359173e-6;
+
+    complexd eps_r;
+    complexd mu_r;
+    double sigma;
+
+    complexd eps_eff;
+    complexd mu_abs;
+    complexd k;
+    complexd eta;
+
+    Medium(complexd _eps_r, complexd _mu_r, double _sigma, double omega)
+        : eps_r(_eps_r), mu_r(_mu_r), sigma(_sigma) {
+
+        mu_abs = mu_r * MU0;
+
+        // Calcolo permittività efficace: eps_eff = eps_real - j(sigma/omega)
+        complexd eps_absolute = eps_r * EPS0;
+        complexd conductivity_term = complexd(0, -1.0) * (sigma / omega);
+        eps_eff = eps_absolute + conductivity_term;
+
+        // k = omega * sqrt(mu * eps_eff)
+        // La radice principale ha parte reale positiva. Per mezzi passivi, Im(k) deve essere <= 0
+        // (Assumendo convenzione fasori exp(jwt - kr)) o >=0 se exp(jwt - jkr).
+        // Qui usiamo standard physics: k = beta - j*alpha
+        k = omega * std::sqrt(mu_abs * eps_eff);
+
+        // eta = sqrt(mu / eps_eff) questa è l'impedenza intrinseca del mezzo
+        eta = std::sqrt(mu_abs / eps_eff);
     }
 };
 
@@ -76,33 +89,34 @@ struct Solution {
     double theta_t_deg = 0.0;
 };
 
+
+
+
+
+// --- Solver ---
+
 class EMInterfaceSolver {
 public:
-    EMInterfaceSolver(complexd eps1_r, complexd mu1_r,
-        complexd eps2_r, complexd mu2_r,
+    EMInterfaceSolver(complexd eps1_r, complexd mu1_r, double sigma1,
+        complexd eps2_r, complexd mu2_r, double sigma2,
         double omega, double theta_i_deg,
         const Vector3D& Ap1_in, bool isTE)
-        : m1(eps1_r, mu1_r, omega), m2(eps2_r, mu2_r, omega),
+        : m1(eps1_r, mu1_r, sigma1, omega), m2(eps2_r, mu2_r, sigma2, omega),
         omega(omega), theta_i(theta_i_deg* PI / 180.0), Ap1(Ap1_in), isTE(isTE)
     {
-        calculate_wave_vectors();
-        // TEM check: Ap1 · kp1 == 0 (within tolerance)
-        complexd d = dot(Ap1, kp1);
-        if (abs(d) > 1e-8) {
-            throw runtime_error("L'onda incidente non è TEM: Ap1 · kp1 != 0 (valore = " + cstr(d) + "). Abort.");
-        }
+        // Inizializza immediatamente i vettori d'onda per tutti i mezzi
+        initialize_wave_vectors();
     }
 
     Solution solve() {
+        cerr << "--- Debug Info ---\n";
+        cerr << "Medium 1: k=" << cstr(m1.k) << ", eta=" << cstr(m1.eta) << "\n";
+        cerr << "Medium 2: k=" << cstr(m2.k) << ", eta=" << cstr(m2.eta) << "\n";
+        cerr << "wavevector kp1 (inc): " << cstr(kp1.x) << ", " << cstr(kp1.y) << ", " << cstr(kp1.z) << "\n";
+        cerr << "wavevectorkp2 (tra): " << cstr(kp2.x) << ", " << cstr(kp2.y) << ", " << cstr(kp2.z) << "\n";
+        cerr << "versori di Kp1v:" << cstr(kp1vx) << "," <<cstr(kp1vy) <<","<< cstr(kp1vz)<<"\n";
+        cerr << "------------------\n";
 
-        
-        cerr << "DEBUG k-vectors:\n";
-        cerr << "k1 = " << m1.k << "\n";
-        cerr << "k2 = " << m2.k << "\n";
-        cerr << "kp1 = (" << kp1.x << ", " << kp1.y << ", " << kp1.z << ")\n";
-        cerr << "kp2 = (" << kp2.x << ", " << kp2.y << ", " << kp2.z << ")\n";
-        cerr << "kx = " << kp1.x << "\n";
-       
         if (isTE) return solve_TE();
         else return solve_TM();
     }
@@ -114,594 +128,289 @@ private:
     Vector3D Ap1;
     bool isTE;
 
-    // wave vectors (only x and z are used)
+
+    // wavevectors
     Vector3D kp1, kr1, kp2;
 
-    void calculate_wave_vectors() {
-        complexd k1 = m1.k;
-        complexd k2 = m2.k;
-        // tangential component kx
-        complexd kx = k1 * sin(theta_i); // conserved
-        // kp1z = sqrt(k1^2 - kx^2), choose root with Re(kp1z) > 0 if possible (incident towards +z)
-        complexd arg1 = k1 * k1 - kx * kx;
-        complexd kz1 = sqrt(arg1);
-        if (real(kz1) < 0) kz1 = -kz1;
-        // If kz1 has positive imag we might flip sign only if that makes sense; keep real>0 for incident
-        if (imag(kz1) > 0 && real(kz1) >= 0) kz1 = -kz1;
 
-        kp1 = Vector3D(kx, complexd(0.0), kz1);
-        // reflected has same kx and opposite kz
-        kr1 = Vector3D(kx, complexd(0.0), -kz1);
+    //// versori dei wavevectors
+    double kp1vx,kp1vy,kp1vz, kr1vx,kr1vy,kr1vz;              //tanto questi sono compoenti di un versore quindi sono reali li metto double e sposto kp2 sopra
 
-        // kp2z = sqrt(k2^2 - kx^2) with Im(kp2z) <= 0
-        complexd arg2 = k2 * k2 - kx * kx;
-        complexd kz2 = sqrt(arg2);
-        if (imag(kz2) > 0) kz2 = -kz2; // enforce Im <= 0
-        if (abs(imag(kz2)) < 1e-15 && real(kz2) < 0) kz2 = -kz2; // prefer positive real part when purely real
-        kp2 = Vector3D(kx, complexd(0.0), kz2);
+
+
+
+
+
+
+
+
+
+    //// Calcolo componenti k basato su angolo (helper)
+    //WaveVector get_k_components(const Medium& m, complexd theta) {
+    //    WaveVector kv;
+    //    kv.kx = m.k * std::sin(theta);
+    //    kv.ky = 0.0;
+    //    kv.kz = m.k * std::cos(theta);
+    //    return kv;
+    //}
+
+ // Calcola i vettori (o versori) d'onda iniziali basandosi sulla geometria descritta
+    void initialize_wave_vectors() {
+        // Conversione angolo in radianti
+        // Usiamo complexd per coerenza, anche se theta_i input è reale         //INVECE NO LO MODIFICO
+        double theta_rad = theta_i;
+        double sin_th = std::sin(theta_rad);
+        double cos_th = std::cos(theta_rad);
+
+        // -----------------------------------------------------------
+        // 1. ONDA INCIDENTE (Mezzo 1) -> VERSORE (Unit Vector)
+        // Riferimento Immagine: K_p1vx = sin(theta), K_p1vz = cos(theta)
+        // -----------------------------------------------------------
+        kp1vx = sin_th;      // Componente x del versore
+        kp1vy = 0.0;
+        kp1vz = cos_th;      // Componente z del versore
+
+        // -----------------------------------------------------------
+        // 2. ONDA RIFLESSA (Mezzo 1) -> VERSORE (Unit Vector)
+        // Riferimento Immagine: K_r1vx = K_p1vx, K_r1vz = -K_p1vz
+        // -----------------------------------------------------------
+        kr1vx = sin_th;       // Speculare rispetto a z: x uguale
+        kr1vy = 0.0;
+        kr1vz = -cos_th;      // Speculare rispetto a z: z opposto
+
+        // -----------------------------------------------------------
+        // 3. ONDA TRASMESSA (Mezzo 2) -> VETTORE D'ONDA COMPLETO
+        // Riferimento Immagine: K_p2x = K1 * K_p1vx
+        // -----------------------------------------------------------
+
+        // Recuperiamo il numero d'onda scalare completo del mezzo 1 e 2
+        complexd K1 = m1.k;
+        complexd K2 = m2.k;
+
+        // Conservazione della componente tangenziale (Legge di Snell generalizzata)
+        // K_p2x deve essere un vettore d'onda completo (dimensione 1/m)
+        complexd Kp2x = K1 * kp1vx;
+
+        // Calcolo componente normale K_p2z
+        // K_p2z = sqrt(K2^2 - K_p2x^2)
+        complexd arg_sq = (K2 * K2) - (Kp2x * Kp2x);
+        complexd Kp2z = std::sqrt(arg_sq);
+
+        // Selezione del segno fisico corretto per la propagazione in z>0
+        // Re(kz) > 0 (propagazione) e Im(kz) <= 0 (attenuazione per convenzione exp(-j*k*r))
+        // Se Kp2z ha parte reale negativa, lo invertiamo.
+        if (real(Kp2z) < 0) Kp2z = -Kp2z;
+
+        kp2.x = Kp2x;
+        kp2.y = 0.0;
+        kp2.z = Kp2z;
+
+
+        // -----------------------------------------------------------
+        // 4. ONDA INCIDENTE (Mezzo 1) -> VETTORE D'ONDA COMPLETO
+        kp1.x = m1.k * kp1vx;
+        kp1.y = 0.0;
+        kp1.z = m1.k * kp1vz;
+        // -----------------------------------------------------------
+        // 5. ONDA RIFLESSA (Mezzo 1) -> VETTORE D'ONDA COMPLETO
+        kr1.x = m1.k * kr1vx;
+        kr1.y = 0.0;
+        kr1.z = m1.k * kr1vz;
+        // -----------------------------------------------------------
+
+
     }
 
-    
+    // --- Calcolo Potenza (Poynting) ---
+    // Generalizzato per vettori complessi
+    Solution calculate_power(const Solution& partial) {
+        Solution sol = partial;
+
+        // Funzione locale per Sz = 0.5 * Re(E x H*)_z
+        auto calc_Sz = [&](const Vector3D& E, const Vector3D& k_vec, const Medium& m) -> double {
+            // H = (1 / omega*mu) * (k x E)
+            Vector3D H = (1.0 / (m.mu_abs * omega)) * cross(k_vec, E);
+
+            // S = 0.5 * E x conj(H)
+            Vector3D H_conj(std::conj(H.x), std::conj(H.y), std::conj(H.z));
+            Vector3D S = 0.5 * cross(E, H_conj);
+            return std::real(S.z);
+            };
+
+        double Sz_inc = calc_Sz(Ap1, kp1, m1);  /// qua invece  vuole i Kp1 completo che devo ancora definire
+        double Sz_ref = calc_Sz(sol.Ar1, kr1, m1);
+        double Sz_tra = calc_Sz(sol.Ap2, kp2, m2);
+
+        // Sz_ref sarà negativo perché viaggia in -z. Prendiamo il valore assoluto per il rapporto.
+        if (std::abs(Sz_inc) > 1e-20) {
+            sol.R = std::abs(Sz_ref) / Sz_inc;
+            sol.T = Sz_tra / Sz_inc;
+            sol.A = 1.0 - sol.R - sol.T;
+        }
+        else {
+            sol.R = 0; sol.T = 0; sol.A = 0;
+        }
+
+        // Calcolo angolo rifrazione reale (dalla direzione di fase)
+        double theta_t = std::atan2(std::real(kp2.x), std::real(kp2.z));
+        sol.theta_t_deg = theta_t * 180.0 / PI;
+
+        return sol;
+    }
+
+  
 
 
-    
+
     // Solve TE case using 2x2 linear system 
     Solution solve_TE() {
         // unknowns: Ar1y, Ap2y
         complexd Ap1y = Ap1.y;
-        complexd kp1z = kp1.z;
-        complexd kr1z = kr1.z;
-        complexd kp2z = kp2.z;
-        complexd mu1 = m1.mu;
-        complexd mu2 = m2.mu;
 
-        // Equations:
-        // 1) Ap1y + Ar1y - Ap2y = 0
-        // 2) (kp1z*Ap1y + kr1z*Ar1y)/mu1 - (kp2z*Ap2y)/mu2 = 0
 
-        // matrix form M * [Ar1y, Ap2y]^T = rhs
-        // from 1) Ar1y - Ap2y = -Ap1y
-        // from 2) (kr1z/mu1) * Ar1y + (-kp2z/mu2) * Ap2y = -kp1z*Ap1y / mu1
+        complexd K1 = m1.k; // Numero d'onda scalare mezzo 1
+        complexd mu1 = m1.mu_abs;
+        complexd mu2 = m2.mu_abs;
 
-        complexd a11 = complexd(1.0);               // Ar1y coef from eq1
-        complexd a12 = complexd(-1.0);              // Ap2y coef from eq1
-        complexd b1 = -Ap1y;
+        double _kp1vz = kp1vz;
+        double _kr1vz = kr1vz;
+        Vector3D _kp2 = kp2;
 
-        complexd a21 = kr1z / mu1;
-        complexd a22 = -kp2z / mu2;
-        complexd b2 = -(kp1z * Ap1y) / mu1;
+        complexd Ar1y = ((K1*_kp1vz*mu2)-(kp2.z*mu1))*Ap1y / ((kp2.z*mu1)-(K1*_kr1vz*mu2));
 
-        // Solve 2x2
-        complexd det = a11 * a22 - a12 * a21;
-        if (abs(det) < EPS) throw runtime_error("Sistema singolare (TE).");
-        complexd Ar1y = (b1 * a22 - a12 * b2) / det;
-        complexd Ap2y = (a11 * b2 - b1 * a21) / det;
+        complexd Ap2y = Ap1y + Ar1y;
+
+        
 
         Solution sol;
         sol.Ar1 = Vector3D(complexd(0.0), Ar1y, complexd(0.0));
         sol.Ap2 = Vector3D(complexd(0.0), Ap2y, complexd(0.0));
 
-        // Power calculations
+        return calculate_power(sol);
+    }
+
+
+
+
+
+    Solution solve_TM() {
+        // Mappatura variabili locali 
+        complexd Ap1x = Ap1.x;
+        complexd Ap1z = Ap1.z;
+
+        complexd K1 = m1.k;      
+        complexd mu1 = m1.mu_abs;
+        complexd mu2 = m2.mu_abs;
+
+
+        complexd _kp2x = kp2.x; // kp2x e kp2z come nelle formule
+        complexd _kp2z = kp2.z;
+
+        // Pre-calcolo quadrati per leggibilità e corrispondenza visiva alle formule
+        complexd kp2x_sq = _kp2x * _kp2x;
+        complexd kp2z_sq = _kp2z * _kp2z;
+        complexd kr1vx_sq = kr1vx * kr1vx;
+        complexd kr1vz_sq = kr1vz * kr1vz;
+        complexd kp1vx_sq = kp1vx * kp1vx; 
+        complexd kp1vz_sq = kp1vz * kp1vz; 
+
+
+        	// --- Denominatore Ar1x ---
+        complexd Denom = (-mu2 * _kp2z * K1 * kr1vx_sq - mu2 * _kp2z * K1 * kr1vz_sq + mu1  * kp2x_sq * kr1vz + kp2z_sq * mu1 * kr1vz);
+
+            // --- Numeratore Ar1x ---
+        complexd Num_Ar1x = (kp1vz * mu2 * _kp2z * K1 * kr1vz - mu1 * kp2x_sq * kr1vz - kp2z_sq * mu1 * kr1vz) * Ap1x - (kp1vx * K1 * mu2 * _kp2z * kr1vz) * Ap1z;
+
+        	// --- Calcolo Ar1x ---
+        complexd Ar1x = Num_Ar1x / Denom;
+
+        complexd Ar1z = -Ar1x * (kr1vx / kr1vz);
+
+        complexd Ap2x = Ap1x + Ar1x;
+
+        complexd Ap2z = -Ap1x * (_kp2x / _kp2z) - Ar1x * (_kp2x / _kp2z);
+
+        // Verifica denominatore
+        if (abs(Denom) < 1e-15) {
+            throw runtime_error("Dominatore nullo in solve_TM (configurazione singolare).");
+        }
+
+
+        // --- Costruzione Soluzione ---
+        Solution sol;
+        sol.Ar1 = Vector3D(Ar1x, complexd(0.0), Ar1z);
+        sol.Ap2 = Vector3D(Ap2x, complexd(0.0), Ap2z);
+
         return calculate_power(sol);
     }
     
-
-
-
-
-
-    //
-    ////per ora preferisco risolvere direttamente con le formule chiuse
-    //Solution solve_TE() {
-    //    // Dati noti
-    //    complexd Ap1y = Ap1.y;
-    //    complexd K1 = m1.k;
-    //    complexd K2 = m2.k;
-    //    complexd mu1 = m1.mu;
-    //    complexd mu2 = m2.mu;
-    //    complexd Kp1z = kp1.z;
-    //    complexd Kp2z = kp2.z;
-    //  
-    //    complexd denom = Kp1z * mu2 + Kp2z * mu1;
-    //   
-    //    // metto Tolleranza relativa per evitare divisioni per numeri troppo piccoli 
-    //    double tol = 1e-14;
-    //    double scale = (double)abs(denom);
-    //    if (scale < 1e-30) scale = 1.0;
-
-    //    Solution sol;
-
-    //    if (abs(denom) > tol * scale) {
-    //       
-    //        complexd Ap2y = (complexd(2.0, 0.0) * Kp1z * mu2 / denom) * Ap1y;                    // (3.11)
-    //        complexd Ar1y = ((Kp1z * mu2 - Kp2z * mu1) / denom) * Ap1y;                        // (3.12)
-
-    //        sol.Ap2 = Vector3D(complexd(0.0), Ap2y, complexd(0.0));
-    //        sol.Ar1 = Vector3D(complexd(0.0), Ar1y, complexd(0.0));
-    //        return calculate_power(sol);
-    //    }
-    //    else {
-    //        //////////////////// PROBABILMENTE NON NECESSARIO //////////////////////
-    //        
-    //        // Fallback numerico stabile: calcola i coefficienti di Fresnel tramite impedenze (
-    //        complexd cos_i = Kp1z / K1;   // cos(theta_i) in termini di k
-    //        complexd cos_t = Kp2z / K2;   // cos(theta_t) in termini di k
-    //        complexd Z1 = m1.Z;
-    //        complexd Z2 = m2.Z;
-
-    //        complexd den_r = Z2 * cos_i + Z1 * cos_t;
-    //        if (abs(den_r) < 1e-30) {
-    //            // ultima risorsa: evita crash e segnala ritorno (riflessione totale simulata)
-    //            cerr << "solve_TE fallback: denominatore Fresnel quasi zero. Restituisco riflessione totale.\n";
-    //            sol.Ap2 = Vector3D(complexd(0.0), complexd(0.0), complexd(0.0));
-    //            sol.Ar1 = Vector3D(complexd(0.0), Ap1y, complexd(0.0));
-    //            return calculate_power(sol);
-    //        }
-
-    //        complexd rTE = (Z2 * cos_i - Z1 * cos_t) / den_r;
-    //        complexd tTE = (complexd(2.0) * Z2 * cos_i) / den_r;
-
-    //        sol.Ar1 = Vector3D(complexd(0.0), rTE * Ap1y, complexd(0.0));
-    //        sol.Ap2 = Vector3D(complexd(0.0), tTE * Ap1y, complexd(0.0));
-
-    //        // Debug (commenta se non desideri output)
-    //        cerr << "[solve_TE fallback] denom troppo piccolo: |denom|=" << abs(denom)
-    //            << ", using Fresnel rTE=" << rTE << ", tTE=" << tTE << "\n";
-
-    //        return calculate_power(sol);
-    //    }
-    //}
-
-
- 
-
-
-//
-//
-//
-//
-//                    //// FUNZIONANTE ////
-//                      /// !!!! !!! ///
-//
-//    // ========================================================================
-//    // NEW solve_TM IMPLEMENTATION (using Eigen)
-//    // This function implements the physically correct 4x4 linear system
-//    // derived from Maxwell's boundary conditions for the TM case.
-//    //
-//    // System: M * x = rhs
-//    // Unknowns: x = [Ar1x, Ar1z, Ap2x, Ap2z]^T
-//    //
-//    // Equations:
-//    // 1. Continuity of E_x:     Ap1x + Ar1x = Ap2x
-//    // 2. Continuity of H_y:     (1/mu1)(k_p1 x Ap1)_y + (1/mu1)(k_r1 x Ar1)_y = (1/mu2)(k_p2 x Ap2)_y
-//    // 3. Reflected TEM:         Ar1 . k_r1 = 0
-//    // 4. Transmitted TEM:       Ap2 . k_p2 = 0
-//    // ========================================================================
-//Solution solve_TM() {
-//    // Known: Ap1.x and Ap1.z 
-//    complexd Ap1x = Ap1.x;
-//    complexd Ap1z = Ap1.z;
-//
-//    // Unknowns vector x = [Ar1x, Ar1z, Ap2x, Ap2z]
-//    Matrix4cd M = Matrix4cd::Zero();
-//    Vector4cd rhs = Vector4cd::Zero();
-//
-//    // Get constants and vectors
-//    Vector3D kp1v = kp1;
-//    Vector3D kp2v = kp2;
-//    complexd mu1 = m1.mu;
-//    complexd mu2 = m2.mu;
-//
-//    // --- Build Matrix M and Vector rhs ---
-//
-//    // Eq 1: Continuity of E_x
-//    // (1)Ar1x + (0)Ar1z + (-1)Ap2x + (0)Ap2z = -Ap1x
-//    M(0, 0) = 1.0;
-//    M(0, 2) = -1.0;
-//    rhs(0) = -Ap1x;
-//
-//    // Eq 2: Continuity of H_y
-//    // H_y = (-j/mu) * (k_z*A_x - k_x*A_z)
-//    // (1/mu1)(k_p1z*Ap1x - k_p1x*Ap1z) + (1/mu1)(-k_p1z*Ar1x - k_p1x*Ar1z) = (1/mu2)(k_p2z*Ap2x - k_p1x*Ap2z)
-//    // Rearranged:
-//    // (-k_p1z/mu1)Ar1x + (-k_p1x/mu1)Ar1z + (-k_p2z/mu2)Ap2x + (k_p1x/mu2)Ap2z = -(1/mu1)(k_p1z*Ap1x - k_p1x*Ap1z)
-//    M(1, 0) = -kp1v.z / mu1;
-//    M(1, 1) = -kp1v.x / mu1;
-//    M(1, 2) = -kp2v.z / mu2;
-//    M(1, 3) = kp1v.x / mu2;
-//    rhs(1) = -(kp1v.z * Ap1x - kp1v.x * Ap1z) / mu1;
-//
-//    // Eq 3: Reflected TEM (Ar1 . k_r1 = 0)
-//    // k_r1 = (k_p1x, 0, -k_p1z)
-//    // (k_p1x)Ar1x + (-k_p1z)Ar1z = 0
-//    M(2, 0) = kp1v.x;
-//    M(2, 1) = -kp1v.z;
-//    rhs(2) = 0.0;
-//
-//    // Eq 4: Transmitted TEM (Ap2 . k_p2 = 0)
-//    // k_p2 = (k_p1x, 0, k_p2z)
-//    // (k_p1x)Ap2x + (k_p2z)Ap2z = 0
-//    M(3, 2) = kp1v.x;
-//    M(3, 3) = kp2v.z;
-//    rhs(3) = 0.0;
-//
-//
-//    // === Solve 4x4 Linear System using Eigen ===
-//    Eigen::FullPivLU<Matrix4cd> lu(M);
-//
-//    if (!lu.isInvertible()) {
-//        throw runtime_error("Sistema lineare TM singolare o mal condizionato (Eigen).");
-//    }
-//
-//    Vector4cd solu = lu.solve(rhs);
-//
-//    // Extract solution
-//    Solution sol;
-//    sol.Ar1 = Vector3D(solu(0), complexd(0.0), solu(1));
-//    sol.Ap2 = Vector3D(solu(2), complexd(0.0), solu(3));
-//
-//    return calculate_power(sol);
-//}
-
-
-
-
-
-
-
-
-
-
-
-//
-//
-/////  VERSIONE CON FORMULE CHIUSE (nuova, con diagnostica e check fisici)  ///
-//Solution solve_TM() {
-//    // === Costanti e dati noti ===
-//    complexd Ap1x = Ap1.x;
-//    complexd Ap1z = Ap1.z;
-//
-//    complexd K1 = m1.k;
-//    complexd mu1 = m1.mu;
-//    complexd mu2 = m2.mu;
-//
-//    complexd Kp1vx = kp1.x;
-//    complexd Kp1vz = kp1.z;
-//    complexd Kp2vz = kp2.z;
-//
-//    // -----------------------------------------------------------------
-//    // Tolleranze e utilità
-//    // -----------------------------------------------------------------
-//    const double EPS_ABS = 1e-14;       // soglia per considerare "quasi zero"
-//    const double EPS_LOSSLESS = 1e-12;  // soglia per considerare parte immaginaria nulla
-//    auto abs_complex = [](const complexd& z) { return std::abs(z); };
-//    auto is_almost_zero = [&](const complexd& z, double tol) {
-//        return std::abs(z) < tol;
-//        };
-//    auto sqnorm = [&](const complexd& z) { return std::norm(z); }; // |z|^2
-//
-//    // =====================================================
-//    // === sigma2 (denominatore comune) ===================
-//    // =====================================================
-//    complexd sigma2 =
-//        mu1 * (K1 * K1) * (Kp1vx * Kp1vx) * Kp1vz
-//        + mu2 * K1 * Kp2vz * (Kp1vx * Kp1vx)
-//        + mu2 * K1 * Kp2vz * (Kp1vz * Kp1vz)
-//        + mu1 * (Kp2vz * Kp2vz) * Kp1vz;
-//
-//    // controllo sigma2 quasi-zero
-//    if (is_almost_zero(sigma2, EPS_ABS)) {
-//        std::cerr << "[WARN] sigma2 è quasi zero (|sigma2| = " << std::scientific << abs_complex(sigma2)
-//            << "). Applico soft-regularization per evitare divisione per zero.\n";
-//        // soft-regularization: aggiungo una piccola parte reale
-//        sigma2 += complexd(EPS_ABS, 0.0);
-//    }
-//
-//    // =====================================================
-//    // === sigma1 =========================================
-//    // =====================================================
-//    complexd sigma1 =
-//        (Ap1z * K1 * Kp2vz * Kp1vx * Kp1vz * mu2) / sigma2;
-//
-//    // =====================================================
-//    // === Calcolo ampiezze esattamente come da formule ====
-//    // =====================================================
-//
-//    // A_r1x
-//    complexd Ar1x =
-//        (Ap1x * K1 * Kp2vz * (Kp1vz * Kp1vz) * mu2) / sigma2
-//        - (Ap1x * (Kp2vz * Kp2vz) * Kp1vz * mu1) / sigma2
-//        - (Ap1x * (K1 * K1) * (Kp1vx * Kp1vx) * Kp1vz * mu1) / sigma2
-//        - sigma1;
-//
-//    // A_r1z
-//    complexd Ar1z =
-//        (Ap1x * K1 * Kp2vz * Kp1vx * Kp1vz * mu2) / sigma2
-//        - (Ap1x * (K1 * K1) * (Kp1vx * Kp1vx * Kp1vx) * mu1) / sigma2
-//        - (Ap1z * K1 * Kp2vz * (Kp1vx * Kp1vx) * mu2) / sigma2
-//        - (Ap1x * (Kp2vz * Kp2vz) * Kp1vx * mu1) / sigma2;
-//
-//    // A_p2x
-//    complexd Ap2x =
-//        (Ap1x * K1 * Kp2vz * (Kp1vx * Kp1vx) * mu2) / sigma2
-//        + (2.0 * Ap1x * K1 * Kp2vz * (Kp1vz * Kp1vz) * mu2) / sigma2
-//        - sigma1;
-//
-//    // A_p2z
-//    complexd Ap2z =
-//        (Ap1z * (K1 * K1) * (Kp1vx * Kp1vx) * Kp1vz * mu2) / sigma2
-//        - (2.0 * Ap1x * (K1 * K1) * Kp1vx * (Kp1vz * Kp1vz) * mu2) / sigma2
-//        - (Ap1x * (K1 * K1) * (Kp1vx * Kp1vx * Kp1vx) * mu2) / sigma2;
-//
-//    // === incapsulamento risultato ===
-//    Solution sol;
-//    sol.Ar1 = Vector3D(Ar1x, complexd(0.0), Ar1z);
-//    sol.Ap2 = Vector3D(Ap2x, complexd(0.0), Ap2z);
-//
-//    // =====================================================
-//    // === CONTROLLI FISICI / DIAGNOSTICI (stampe) ========
-//    // =====================================================
-//
-//    // semplice misura energia numerica (non tiene conto di impedenze/angoli)
-//    double incident_pow = double(sqnorm(Ap1x) + sqnorm(Ap1z));
-//    double reflected_pow = double(sqnorm(Ar1x) + sqnorm(Ar1z));
-//    double transmitted_pow = double(sqnorm(Ap2x) + sqnorm(Ap2z));
-//    double total_out_pow = reflected_pow + transmitted_pow;
-//
-//    // rileva se i mezzi sono (quasi) lossless
-//    bool lossless_guess =
-//        std::abs(std::imag(mu1)) < EPS_LOSSLESS &&
-//        std::abs(std::imag(mu2)) < EPS_LOSSLESS &&
-//        std::abs(std::imag(K1)) < EPS_LOSSLESS &&
-//        std::abs(std::imag(Kp1vx)) < EPS_LOSSLESS &&
-//        std::abs(std::imag(Kp1vz)) < EPS_LOSSLESS &&
-//        std::abs(std::imag(Kp2vz)) < EPS_LOSSLESS;
-//
-//    // incidenza normale se la componente trasversale (qui guess Kp1vx) è quasi zero
-//    bool normal_incidence = std::abs(Kp1vx) < 1e-12;
-//
-//    // stampa diagnostica sommaria
-//    std::cerr << std::fixed;
-//    std::cerr << "[DIAG] incident |A|^2 = " << incident_pow
-//        << "  reflected |A|^2 = " << reflected_pow
-//        << "  transmitted |A|^2 = " << transmitted_pow << "\n";
-//
-//    if (incident_pow <= 0.0) {
-//        std::cerr << "[WARN] Potenza incidente numerica nulla (|Ap1|^2 = 0). Controlla Ap1x/Ap1z.\n";
-//    }
-//    else {
-//        double ratio = total_out_pow / incident_pow;
-//        std::cerr << "[DIAG] (|Ar|^2 + |Ap2|^2) / |Ap1|^2 = " << ratio << "\n";
-//
-//        // Se sembra lossless, aspettiamoci ratio ~ 1 (con cautela)
-//        if (lossless_guess) {
-//            if (std::abs(ratio - 1.0) > 1e-6) {
-//                std::cerr << "[WARN] Mezzi appaiono lossless ma (ref+trans)/inc != 1 (delta = "
-//                    << (ratio - 1.0) << "\n";
-//            }
-//            else {
-//                std::cerr << "[OK] Lossless guess e bilancio energetico (rapporto ~1) soddisfatto entro tolleranza.\n";
-//            }
-//        }
-//        else {
-//            std::cerr << "[INFO] Almeno uno dei parametri ha parte immaginaria significativa: assorbimento o perdita presente.\n";
-//        }
-//
-//        // se in incidenza normale e lossless, possiamo fare confronto con la semplice aspettativa di conservazione
-//        if (normal_incidence && lossless_guess) {
-//            std::cerr << "[INFO] Incidenza normale + lossless. Aspettativa qualitativa: (ref+trans)/inc ~ 1.\n";
-//        }
-//    }
-//
-//    // controllo di consistenza numerica su sigma1
-//    if (std::isnan(std::real(sigma1)) || std::isnan(std::imag(sigma1))) {
-//        std::cerr << "[ERROR] sigma1 è NaN dopo il calcolo. Controlla input per valori inf/nan.\n";
-//    }
-//
-//    // avvisi su valori anomali dei parametri (semplici heuristics)
-//    if (std::abs(mu1) > 1e6 || std::abs(mu2) > 1e6) {
-//        std::cerr << "[WARN] mu molto grande (" << mu1 << ", " << mu2 << "). Controlla unità/dati.\n";
-//    }
-//
-//    if (std::abs(Kp1vx) < 1e-12) {
-//        std::cerr << "[INFO] Kp1vx ~ 0 -> incidenza prossima alla normale.\n";
-//    }
-//
-//    if (std::abs(Kp2vz) < 1e-14) {
-//        std::cerr << "[WARN] Kp2vz molto piccolo -> possibile condizione di angolo critico o numerica.\n";
-//    }
-//
-//    // restituisco il risultato come prima (la funzione calculate_power rimane il punto centrale)
-//    return calculate_power(sol);
-//}
-//
-
-
-
-
-// TOLGO PER IL MOMENTO ULTIMA VERSIONE NON ANCORA FUNZIONANTE
-
-
-
-//nE FACCIO UNA NUOVA CHE TECNICAMENTE USA LE STESSE FORMULE DI MATLAB MA PRE SEMPLIFICAZIONE 
-
-Solution solve_TM()
-{
-    cout<< "Solving TM case using direct closed-form formulas diocane...\n";
-  
-    complexd Ap1x = Ap1.x;
-    complexd Ap1z = Ap1.z;
-
-
-    complexd kp1vx = kp1.x;
-    complexd kp1vz = kp1.z;
-    complexd K1 = m1.k;
-
-    complexd kp2z = kp2.z;
-
-    complexd mu1 = m1.mu;
-    complexd mu2 = m2.mu;
-
-    //identità geometriche che applico io qua dentro
-
-    complexd KR1vx = kp1.x;
-    complexd KR1vz = -kp1.z; 
-    complexd Kp2x = m1.k * kp1.x;
-
- 
-    // === Calcolo ampiezze riflessa e trasmessa (come nel tuo codice) ===
-
-    //complexd Ar1x =  -((Kp1vz * ((Ap1x * mu1 * (Kp1vx * Kp1vx)) + (Ap1z * mu2 * Kp1vx * Kp2z) + (Ap1x * mu1 * (Kp2z * Kp2z)) - (Ap1x * Kp1vz * mu2 * Kp2z))) / ((mu1 * (Kp1vx * Kp1vx) * Kp1z) + (mu2 * (Kp1vx * Kp1vx) * Kp2z) + (mu2 * (Kp1vz * Kp1vz) * Kp2z) + (mu1 * Kp1vz * (Kp2z * Kp2z)))); 
-    complexd Ar1x = -(kp1vz * (Ap1x * mu1 * kp2z * kp2z + Ap1z * mu2 * kp2z * kp1vx - Ap1x * kp1vz * mu2 * kp2z + Ap1x * mu1 * kp1vx * kp1vx)) / (mu1 * kp2z * kp2z * kp1vz + mu2 * kp2z * kp1vx * kp1vx + mu2 * kp2z * kp1vz * kp1vz + mu1 * kp1vx * kp1vx * kp1vz);
-
-
-    complexd Ar1z = -(kp1vx * (Ap1x * mu1 * kp2z * kp2z + Ap1z * mu2 * kp2z * kp1vx - Ap1x * kp1vz * mu2 * kp2z + Ap1x * mu1 * kp1vx * kp1vx)) / (mu1 * kp2z * kp2z * kp1vz + mu2 * kp2z * kp1vx * kp1vx + mu2 * kp2z * kp1vz * kp1vz + mu1 * kp1vx * kp1vx * kp1vz);
-   
-    
-    
-   complexd Ap2x = (kp2z * mu2 * (Ap1x * kp1vx * kp1vx - Ap1z * kp1vx * kp1vz + 2.0 * Ap1x * kp1vz * kp1vz)) / (mu1 * kp2z * kp2z * kp1vz + mu2 * kp2z * kp1vx * kp1vx + mu2 * kp2z * kp1vz * kp1vz + mu1 * kp1vx * kp1vx * kp1vz);
-    
-   complexd Ap2z = -(kp1vx * mu2 * (Ap1x * kp1vx * kp1vx - Ap1z * kp1vx * kp1vz + 2.0 * Ap1x * kp1vz * kp1vz)) / (mu1 * kp2z * kp2z * kp1vz + mu2 * kp2z * kp1vx * kp1vx + mu2 * kp2z * kp1vz * kp1vz + mu1 * kp1vx * kp1vx * kp1vz);
     
     
     
     
-    // === Impacchettamento risultato (come nel tuo codice) ===
-    Solution sol;
-
-    sol.Ar1 = Vector3D(Ar1x, complexd(0.0), Ar1z);
-    sol.Ap2 = Vector3D(Ap2x, complexd(0.0), Ap2z);
-
-    // === Calcolo finale della potenza ===
-    return calculate_power(sol);
-}
-
-
-
-
-
-
-
-    Solution calculate_power(const Solution& partial) {
-        Solution sol = partial;
-        // compute Poynting z component: S_z = 0.5 * Re{ E × H* }_z
-        // For amplitude A, H_amp = (1/(omega*mu)) (k × A)
-        auto poynting_z = [&](const Vector3D& A, const Vector3D& kvec, const Medium& m)->complexd {
-            Vector3D H = (1.0 / complexd(omega)) * ((1.0 / m.mu) * cross(kvec, A));
-            Vector3D ExHc = cross(A, Vector3D(conj(H.x), conj(H.y), conj(H.z)));
-            return complexd(0.5) * ExHc.z; // may be complex; physical S_z is Re(...)
-            };
-        complexd Sp = poynting_z(Ap1, kp1, m1);
-        complexd Sr = poynting_z(sol.Ar1, kr1, m1);
-        complexd St = poynting_z(sol.Ap2, kp2, m2);
-
-        double Sp_z = real(Sp);
-        double Sr_z = real(Sr);
-        double St_z = real(St);
-
-        // Incident power should be positive in +z direction for the incident wave (depending on sign conv)
-        // In our geometry incident is coming toward +z (from z<0), so Sp_z should be positive.
-        // Reflected power should be negative (propagating away -> negative z Poynting).
-        double R = 0.0, T = 0.0;
-        if (abs(Sp_z) > 1e-18) {
-            R = fabs(Sr_z) / Sp_z;
-            T = St_z / Sp_z;
-        }
-        else {
-            R = NAN; T = NAN;
-        }
-        double Aabs = 1.0 - R - T;
-
-        sol.R = R;
-        sol.T = T;
-        sol.A = Aabs;
-
-        // angle of refraction from real parts of kp2
-        double kpxr = real(kp2.x);
-        double kpzr = real(kp2.z);
-        double theta_t = atan2(kpxr, kpzr); // note: atan2(y,x) but we want atan2(kx, kz)
-        sol.theta_t_deg = theta_t * 180.0 / PI;
-
-        return sol;
-    }
+    
 };
 
 int main() {
     ios::sync_with_stdio(false);
     cin.tie(nullptr);
     try {
-        cout << "=== EM Interface Solver (CLI) ===\n";
+        cout << "=== EM Interface Solver (Lossy Media Support) ===\n";
         cout << "Inserire frequenza f [Hz]: "; double f; cin >> f;
         double omega = 2.0 * PI * f;
-
+   
+        
         auto read_complex_rel = [&](const string& name)->complexd {
             double re, im;
-            cout << "Inserire " << name << " parte reale (valore relativo): "; cin >> re;
-            cout << "Inserire " << name << " parte immaginaria (valore relativo): "; cin >> im;
+            cout << "Inserire " << name << " parte reale: "; cin >> re;
+            cout << "Inserire " << name << " parte immaginaria: "; cin >> im;
             return complexd(re, im);
             };
 
-        cout << "--- Mezzo 1 ---\n";
+        // --- INPUT AGGIORNATO CON SIGMA ---
+        cout << "\n--- Mezzo 1 ---\n";
         complexd eps1_r = read_complex_rel("eps_r1");
         complexd mu1_r = read_complex_rel("mu_r1");
+        cout << "Inserire conduttivita sigma1 [S/m]: "; double sigma1; cin >> sigma1;
 
-        cout << "--- Mezzo 2 ---\n";
+        cout << "\n--- Mezzo 2 ---\n";
         complexd eps2_r = read_complex_rel("eps_r2");
         complexd mu2_r = read_complex_rel("mu_r2");
+        cout << "Inserire conduttivita sigma2 [S/m]: "; double sigma2; cin >> sigma2;
 
-        cout << "Angolo di incidenza theta_i [gradi]: "; double theta_i; cin >> theta_i;
-        cout << "Polarizzazione (TE inserire 1, TM inserire 0): "; int pol; cin >> pol;
+        cout << "\nAngolo di incidenza theta_i [gradi]: "; double theta_i; cin >> theta_i;
+        cout << "Polarizzazione (TE = 1, TM = 0): "; int pol; cin >> pol;
         bool isTE = (pol == 1);
 
         Vector3D Ap1;
         if (isTE) {
-            cout << "Inserire ampiezza complessa Ap1_y (parte reale): "; double ar, ai; cin >> ar; cout << " (parte immaginaria): "; cin >> ai;
+            cout << "Inserire ampiezza Ap1_y (Re Im): "; double ar, ai; cin >> ar >> ai;
             Ap1 = Vector3D(0.0, complexd(ar, ai), 0.0);
         }
         else {
-            
-            cout << "Inserire ampiezza totale TM (A_tot) (parte reale): "; double ar, ai; cin >> ar; cout << " (parte immaginaria): "; cin >> ai;
+            cout << "Inserire ampiezza totale TM (Re Im): "; double ar, ai; cin >> ar >> ai;
             complexd A_total = complexd(ar, ai);
-
-            // Calcola automaticamente le componenti Ap1x e Ap1z per garantire la condizione TEM
-            // A_p1 deve essere ortogonale a k_p1 = (k1*sin_i, 0, k1*cos_i)
-            // Il vettore ortogonale nel piano x-z è A_p1_dir = (cos_i, 0, -sin_i)
-            double theta_i_rad = theta_i * PI / 180.0;
-            complexd Ap1x = A_total * cos(theta_i_rad);
-            complexd Ap1z = A_total * (-sin(theta_i_rad));
-            Ap1 = Vector3D(Ap1x, complexd(0.0), Ap1z);
-
-            cout << "  -> Calcolata Ap1.x = " << cstr(Ap1x) << "\n";
-            cout << "  -> Calcolata Ap1.z = " << cstr(Ap1z) << "\n";
+            double th_rad = theta_i * PI / 180.0;
+            // Proiezione su assi x,z per incidenza
+            Ap1 = Vector3D(A_total * cos(th_rad), 0.0, A_total * -sin(th_rad));
         }
 
-
-
-
-
-        EMInterfaceSolver solver(eps1_r, mu1_r, eps2_r, mu2_r, omega, theta_i, Ap1, isTE);
+        EMInterfaceSolver solver(eps1_r, mu1_r, sigma1, eps2_r, mu2_r, sigma2, omega, theta_i, Ap1, isTE);
         Solution sol = solver.solve();
 
         cout << "\n=== Risultati ===\n";
-        cout << "Ampiezza riflessa Ar1: \n";
-        cout << "  Ar1.x = " << cstr(sol.Ar1.x) << "\n";
-        cout << "  Ar1.y = " << cstr(sol.Ar1.y) << "\n";
-        cout << "  Ar1.z = " << cstr(sol.Ar1.z) << "\n";
-        cout << "Ampiezza rifratta Ap2: \n";
-        cout << "  Ap2.x = " << cstr(sol.Ap2.x) << "\n";
-        cout << "  Ap2.y = " << cstr(sol.Ap2.y) << "\n";
-        cout << "  Ap2.z = " << cstr(sol.Ap2.z) << "\n";
+        cout << "Riflessa Ar1: " << cstr(sol.Ar1.x) << ", " << cstr(sol.Ar1.y) << ", " << cstr(sol.Ar1.z) << "\n";
+        cout << "Trasmessa Ap2: " << cstr(sol.Ap2.x) << ", " << cstr(sol.Ap2.y) << ", " << cstr(sol.Ap2.z) << "\n";
 
-        cout << fixed << setprecision(4);
-        cout << "\nRiflettanza R = " << sol.R * 100.0 << " %\n";
-        cout << "Trasmittanza T = " << sol.T * 100.0 << " %\n";
-        cout << "Assorbanza (dissipata) A = " << sol.A * 100.0 << " %\n";
-        cout << "Angolo di penetrazione (theta_t) = " << sol.theta_t_deg << " deg\n";
-
+        cout << fixed << setprecision(2);
+        cout << "\nBilancio Energetico:\n";
+        cout << "Riflettanza R: " << sol.R * 100.0 << " %\n";
+        cout << "Trasmittanza T: " << sol.T * 100.0 << " %\n";
+        cout << "Assorbanza A : " << sol.A * 100.0 << " %\n";
+        cout << "Angolo rifrazione reale: " << sol.theta_t_deg << " deg\n";
     }
-    catch (exception& e) {
-        cerr << "Errore: " << e.what() << "\n";
-        return 1;
+    catch (const exception& e) {
+        cerr << "Errore critico: " << e.what() << endl;
     }
     return 0;
 }

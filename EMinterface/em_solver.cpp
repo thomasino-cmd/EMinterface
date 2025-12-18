@@ -8,10 +8,9 @@
 #include <stdexcept>    
 #include <algorithm>    
 #include <exception>    
-#include <Eigen/Dense>  
 
 using namespace std;
-using namespace Eigen;
+
 using complexd = complex<double>;
 const double PI = acos(-1.0);
 
@@ -37,16 +36,20 @@ Vector3D cross(const Vector3D& a, const Vector3D& b) {
         a.x * b.y - a.y * b.x);
 }
 
+
+
 string cstr(const complexd& c) {
     ostringstream ss;
-    ss << fixed << setprecision(4);
+
+    // scientific notation with precision to 8
+    ss << scientific << setprecision(8);
     ss << real(c);
     if (imag(c) >= 0) ss << "+j" << imag(c);
     else ss << "-j" << abs(imag(c));
     return ss.str();
 }
 
-// --- Struct Medium Aggiornata (Fisica Corretta) ---
+// --- Struct Medium  ---
 
 struct Medium {
     static constexpr double EPS0 = 8.854187817e-12;
@@ -82,11 +85,19 @@ struct Medium {
     }
 };
 
+
+constexpr double Medium::EPS0;
+constexpr double Medium::MU0;
+
+
+
+// --- Struct Soluzione ---
+
 struct Solution {
     Vector3D Ar1;
     Vector3D Ap2;
     double R = 0.0, T = 0.0, A = 0.0;
-    double theta_t_deg = 0.0;
+    double theta_t_rad = 0.0;
 };
 
 
@@ -99,10 +110,10 @@ class EMInterfaceSolver {
 public:
     EMInterfaceSolver(complexd eps1_r, complexd mu1_r, double sigma1,
         complexd eps2_r, complexd mu2_r, double sigma2,
-        double omega, double theta_i_deg,
+        double omega, double theta_i_rad,
         const Vector3D& Ap1_in, bool isTE)
         : m1(eps1_r, mu1_r, sigma1, omega), m2(eps2_r, mu2_r, sigma2, omega),
-        omega(omega), theta_i(theta_i_deg* PI / 180.0), Ap1(Ap1_in), isTE(isTE)
+        omega(omega), theta_i(theta_i_rad), Ap1(Ap1_in), isTE(isTE)
     {
         // Inizializza immediatamente i vettori d'onda per tutti i mezzi
         initialize_wave_vectors();
@@ -191,20 +202,20 @@ private:
         // K_p2x deve essere un vettore d'onda completo (dimensione 1/m)
         complexd Kp2x = K1 * kp1vx;
 
+
         // Calcolo componente normale K_p2z
-        // K_p2z = sqrt(K2^2 - K_p2x^2)
         complexd arg_sq = (K2 * K2) - (Kp2x * Kp2x);
         complexd Kp2z = std::sqrt(arg_sq);
 
-        // Selezione del segno fisico corretto per la propagazione in z>0
-        // Re(kz) > 0 (propagazione) e Im(kz) <= 0 (attenuazione per convenzione exp(-j*k*r))
-        // Se Kp2z ha parte reale negativa, lo invertiamo.
-        if (real(Kp2z) < 0) Kp2z = -Kp2z;
+        // FIX APPLIED: apllica la condizione fisica Im(kz) <= 0
+        // questo assicura che l'onda decada (o che quantomeno non cresca ) nella direzione +z.
+        if (imag(Kp2z) > 1e-15) { //small tolerance for floating point safety
+            Kp2z = -Kp2z;
+        }
 
         kp2.x = Kp2x;
         kp2.y = 0.0;
         kp2.z = Kp2z;
-
 
         // -----------------------------------------------------------
         // 4. ONDA INCIDENTE (Mezzo 1) -> VETTORE D'ONDA COMPLETO
@@ -253,7 +264,7 @@ private:
 
         // Calcolo angolo rifrazione reale (dalla direzione di fase)
         double theta_t = std::atan2(std::real(kp2.x), std::real(kp2.z));
-        sol.theta_t_deg = theta_t * 180.0 / PI;
+        sol.theta_t_rad = theta_t ;
 
         return sol;
     }
@@ -274,7 +285,6 @@ private:
 
         double _kp1vz = kp1vz;
         double _kr1vz = kr1vz;
-        Vector3D _kp2 = kp2;
 
         complexd Ar1y = ((K1*_kp1vz*mu2)-(kp2.z*mu1))*Ap1y / ((kp2.z*mu1)-(K1*_kr1vz*mu2));
 
@@ -311,8 +321,6 @@ private:
         complexd kp2z_sq = _kp2z * _kp2z;
         complexd kr1vx_sq = kr1vx * kr1vx;
         complexd kr1vz_sq = kr1vz * kr1vz;
-        complexd kp1vx_sq = kp1vx * kp1vx; 
-        complexd kp1vz_sq = kp1vz * kp1vz; 
 
 
         	// --- Denominatore Ar1x ---
@@ -367,7 +375,7 @@ int main() {
             return complexd(re, im);
             };
 
-        // --- INPUT AGGIORNATO CON SIGMA ---
+
         cout << "\n--- Mezzo 1 ---\n";
         complexd eps1_r = read_complex_rel("eps_r1");
         complexd mu1_r = read_complex_rel("mu_r1");
@@ -378,7 +386,7 @@ int main() {
         complexd mu2_r = read_complex_rel("mu_r2");
         cout << "Inserire conduttivita sigma2 [S/m]: "; double sigma2; cin >> sigma2;
 
-        cout << "\nAngolo di incidenza theta_i [gradi]: "; double theta_i; cin >> theta_i;
+        cout << "\nAngolo di incidenza theta_i [radianti]: "; double theta_i_rad; cin >> theta_i_rad;
         cout << "Polarizzazione (TE = 1, TM = 0): "; int pol; cin >> pol;
         bool isTE = (pol == 1);
 
@@ -390,13 +398,16 @@ int main() {
         else {
             cout << "Inserire ampiezza totale TM (Re Im): "; double ar, ai; cin >> ar >> ai;
             complexd A_total = complexd(ar, ai);
-            double th_rad = theta_i * PI / 180.0;
+            double th_rad = theta_i_rad;
             // Proiezione su assi x,z per incidenza
             Ap1 = Vector3D(A_total * cos(th_rad), 0.0, A_total * -sin(th_rad));
         }
 
-        EMInterfaceSolver solver(eps1_r, mu1_r, sigma1, eps2_r, mu2_r, sigma2, omega, theta_i, Ap1, isTE);
+        EMInterfaceSolver solver(eps1_r, mu1_r, sigma1, eps2_r, mu2_r, sigma2, omega, theta_i_rad, Ap1, isTE);
         Solution sol = solver.solve();
+
+
+
 
         cout << "\n=== Risultati ===\n";
         cout << "Riflessa Ar1: " << cstr(sol.Ar1.x) << ", " << cstr(sol.Ar1.y) << ", " << cstr(sol.Ar1.z) << "\n";
@@ -407,7 +418,9 @@ int main() {
         cout << "Riflettanza R: " << sol.R * 100.0 << " %\n";
         cout << "Trasmittanza T: " << sol.T * 100.0 << " %\n";
         cout << "Assorbanza A : " << sol.A * 100.0 << " %\n";
-        cout << "Angolo rifrazione reale: " << sol.theta_t_deg << " deg\n";
+        cout << "Angolo rifrazione reale: " << sol.theta_t_rad << " rad\n";
+
+
     }
     catch (const exception& e) {
         cerr << "Errore critico: " << e.what() << endl;

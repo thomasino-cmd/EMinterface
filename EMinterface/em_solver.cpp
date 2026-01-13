@@ -131,7 +131,9 @@ public:
         if (isTE) return solve_TE();
         else return solve_TM();
     }
-
+    const Vector3D& get_kp2() const { return kp2; }
+    const Vector3D& get_kp1() const { return kp1; }
+    const Vector3D& get_kr1() const { return kr1; }
 private:
     Medium m1, m2;
     double omega;
@@ -359,6 +361,9 @@ private:
     
 };
 
+
+
+#ifndef EMSOLVER_NO_MAIN
 int main() {
     ios::sync_with_stdio(false);
     cin.tie(nullptr);
@@ -427,3 +432,4 @@ int main() {
     }
     return 0;
 }
+#endif

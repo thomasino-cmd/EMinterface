@@ -131,7 +131,26 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="em_solver.cpp" />
+    <ClCompile Include="em_solver.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="tile_overlap_demo.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="include\em\meniscus_overlap.hpp" />
+    <ClInclude Include="include\em\overlap_analyzer.hpp" />
+    <ClInclude Include="include\em\thickness_search.hpp" />
+    <ClInclude Include="include\em\tile_wrapper.hpp" />
+    <ClInclude Include="include\geom\basis.hpp" />
+    <ClInclude Include="include\geom\clip2d.hpp" />
+    <ClInclude Include="include\geom\plane.hpp" />
+    <ClInclude Include="include\geom\plane2d.hpp" />
+    <ClInclude Include="include\geom\project.hpp" />
+    <ClInclude Include="include\geom\triangle.hpp" />
+    <ClInclude Include="include\geom\vec2.hpp" />
+    <ClInclude Include="include\geom\vec3.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

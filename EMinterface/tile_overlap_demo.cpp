@@ -8,7 +8,7 @@
 
 int main() {
     try {
-        //stai prendendo un tile quadrato 50 µm × 50 µm
+        //stai prendendo un tile  1mm * 1mm
         //approssimato con un triangolo
         //posto su z = 0
         // 1) Define one interface triangle (units: meters)

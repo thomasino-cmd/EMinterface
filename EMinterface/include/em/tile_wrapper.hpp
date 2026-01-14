@@ -1,16 +1,5 @@
 #pragma once
 
-// IMPORTANT:
-// This header is designed to work with your existing em_solver.cpp without rewriting it.
-// It assumes that em_solver.cpp is compiled/ included in the SAME translation unit, so that
-// Vector3D, Medium, EMInterfaceSolver, cross(), etc. are visible.
-//
-// Recommended usage pattern in a new .cpp:
-//   #define EMSOLVER_NO_MAIN
-//   #include "../em_solver.cpp"   // path as appropriate
-//   #include "em/tile_wrapper.hpp"
-//   #include "em/overlap_analyzer.hpp"
-
 #include <complex>
 #include <stdexcept>
 #include <algorithm>
@@ -125,7 +114,7 @@ inline LocalFrame make_local_frame(const geom::Triangle& tri,
 }
 
 // Build incident field vector in the LOCAL solver coordinate system.
-// Matches solver.cpp conventions.
+
 inline Vector3D make_incident_E_local(double theta_i, std::complex<double> A_inc, bool isTE) {
     if (isTE) {
         return Vector3D(0.0, A_inc, 0.0);

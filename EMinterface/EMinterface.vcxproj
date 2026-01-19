@@ -108,6 +108,7 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>$(ProjectDir)external\eigen-5.0.0;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -134,13 +135,15 @@
     <ClCompile Include="em_solver.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="tile_overlap_demo.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
-    </ClCompile>
+    <ClCompile Include="tile_overlap.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="include\em\beam_mesh.hpp" />
+    <ClInclude Include="include\em\frames.hpp" />
     <ClInclude Include="include\em\meniscus_overlap.hpp" />
+    <ClInclude Include="include\em\meniscus_projection.hpp" />
     <ClInclude Include="include\em\overlap_analyzer.hpp" />
+    <ClInclude Include="include\em\postprocess_grid.hpp" />
     <ClInclude Include="include\em\thickness_search.hpp" />
     <ClInclude Include="include\em\tile_wrapper.hpp" />
     <ClInclude Include="include\geom\basis.hpp" />
@@ -151,6 +154,8 @@
     <ClInclude Include="include\geom\triangle.hpp" />
     <ClInclude Include="include\geom\vec2.hpp" />
     <ClInclude Include="include\geom\vec3.hpp" />
+    <ClInclude Include="include\em\meniscus_model.hpp" />
+    <ClInclude Include="include\utils\constants.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

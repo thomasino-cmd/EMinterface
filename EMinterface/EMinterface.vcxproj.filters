@@ -18,7 +18,7 @@
     <ClCompile Include="em_solver.cpp">
       <Filter>File di origine</Filter>
     </ClCompile>
-    <ClCompile Include="tile_overlap_demo.cpp">
+    <ClCompile Include="tile_overlap.cpp">
       <Filter>File di origine</Filter>
     </ClCompile>
   </ItemGroup>
@@ -57,6 +57,24 @@
       <Filter>File di intestazione</Filter>
     </ClInclude>
     <ClInclude Include="include\geom\vec3.hpp">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
+    <ClInclude Include="include\em\meniscus_model.hpp">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
+    <ClInclude Include="include\em\frames.hpp">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
+    <ClInclude Include="include\em\beam_mesh.hpp">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
+    <ClInclude Include="include\em\meniscus_projection.hpp">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
+    <ClInclude Include="include\em\postprocess_grid.hpp">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
+    <ClInclude Include="include\utils\constants.hpp">
       <Filter>File di intestazione</Filter>
     </ClInclude>
   </ItemGroup>

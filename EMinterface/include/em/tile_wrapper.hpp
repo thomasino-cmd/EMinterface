@@ -43,6 +43,8 @@ struct TileSolveResult {
     geom::Vec3 d_phase;     // ~ Re(k)
     geom::Vec3 d_atten;     // ~ -Im(k)
     geom::Vec3 d_poynting;  // ~ <S>
+    geom::Vec3 S_avg;  // [W/m^2] time-average Poynting (real)
+
 
     // Diagnostics
     double theta_i{0.0};
@@ -178,6 +180,7 @@ inline TileSolveResult solve_on_triangle(const geom::Triangle& tri,
 
     const geom::Vec3 S = poynting_avg_real(out.Ap2_global, out.kp2_global, media.mu2_r, media.omega);
     out.d_poynting = geom::safe_normalize(S, eps);
+    out.S_avg = S;
 
     return out;
 }

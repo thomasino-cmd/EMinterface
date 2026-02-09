@@ -32,14 +32,16 @@ int main() {
         // =========================
         // Cuvette (interno)
         const double Rin = 6.3e-3;      // [m]
-        const double V = 1.0e-6;      // [m^3] 1 mL = 1e-6 m^3 (esempio)
+        const double V = 3.0e-7;      // [m^3] 300 mm^3
         const double Dm = 1.0e-3;      // [m] profondità menisco (esempio)
 
         // Fascio 
-        const double Rf = 2.0e-3;     // [m] raggio fascio
-        const double x_af = 1.0e-3;     // [m] offset asse fascio
-        const double theta = 10.0 * utils::pi / 180.0;
-        const double phi = 30.0 * utils::pi / 180.0;
+        const double Rf = 5.64e-3;     // [m] raggio fascio
+        
+        //DISALLINEAMENTO LATERALE
+        const double x_af = 0.0;     // [m] offset asse fascio oscilla tra 0.0mm E 0.5mm
+        const double theta = 1 * utils::pi / 180.0;      //10.0 gradi di inclinazione rispetto alla verticale (esempio)
+        const double phi = 1 * utils::pi / 180.0;        //30 gradi di rotazione attorno all'asse z (esempio)
 
         // Mesh
         const int n_pr = 10;          // punti per raggio (>=2)
@@ -53,7 +55,7 @@ int main() {
         const int Nx = 250, Ny = 250;
 
         // Wave / media (metti i tuoi valori veri qui)
-        const double f = 100e9; // [Hz]
+        const double f = 3.701e14; // [Hz] esempio 100 GHz ((100e9)) (onda millimetrica), lambda ~ 3 mm
         const double omega = 2.0 * utils::pi * f;
 
         em::MediaParams media;
@@ -65,13 +67,13 @@ int main() {
         media.sigma1 = 0.0;
 
         // Mezzo 2 (soluzione salina - esempi)
-        media.eps2_r = { 80.0, -5.0 };  // esempio complesso
+        media.eps2_r = { 1.7716, -3.346e-7 };  // esempio complesso (80 è la parte reale, -5 è la parte immaginaria che rappresenta la perdita)
         media.mu2_r = { 1.0, 0.0 };
-        media.sigma2 = 1.0;           // S/m (esempio)
+        media.sigma2 = 1.0;           // S/m (esempio 1.0 )
 
         // Polarizzazione / ampiezza
         em::BeamParams beam;
-        beam.A_inc = { 1.0, 0.0 };
+        beam.A_inc = { 2744.9 , 0.0 };  // ampiezza complessa (esempio 1.0)
         beam.isTE = true;
 
 

@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iomanip>
 #include <limits>
+#include <cmath>
 
 #include <algorithm>
 
@@ -116,6 +117,11 @@ int main() {
         // =========================
         // 4) Proiezione mesh sul menisco (vera)
         // =========================
+        std::ofstream node_status_csv("node_status.csv");
+        if (!node_status_csv) throw std::runtime_error("Cannot open node_status.csv");
+        node_status_csv << "node_id,x3_m,y3_m,x1_m,y1_m,ok,reason_code,reason_label,"
+                           "disc,root1,root2,chosen_root,checks\n";
+
         std::vector<geom::Vec3> nodes_on_meniscus(mesh.nodes.size());
         std::vector<char> ok(mesh.nodes.size(), 0);
 
@@ -123,12 +129,26 @@ int main() {
             const double x3 = mesh.nodes[i].x;
             const double y3 = mesh.nodes[i].y;
 
+            // Coordinate del nodo nel sistema globale sul piano z3=0
+            const geom::Vec3 p1 = fr.x1_from_x3({ x3, y3, 0.0 });
+
             // Proietta lungo +z3 (poi la direzione fisica la gestiamo con beam_sign)
             em::ProjectionResult pr = em::project_node_to_meniscus(fr, men, x3, y3);
             if (pr.ok) {
                 nodes_on_meniscus[i] = pr.p1;
                 ok[i] = 1;
             }
+
+            node_status_csv << i << "," << std::setprecision(16)
+                << x3 << "," << y3 << ","
+                << p1.x << "," << p1.y << ","
+                << (pr.ok ? 1 : 0) << ","
+                << pr.reason_code << "," << pr.reason_label << ","
+                << pr.disc << ","
+                << pr.root1 << ","
+                << pr.root2 << ","
+                << pr.chosen_root << ","
+                << std::quoted(pr.checks) << "\n";
         }
 
         // =========================
@@ -158,6 +178,10 @@ int main() {
         if (!tri_status_csv) throw std::runtime_error("Cannot open triangle_status.csv");
         tri_status_csv << "tri_id,status_code,status_label,has_meniscus_geom,has_bottom_geom,Pin_W,Ponplane_W,att\n";
 
+        std::ofstream tri_fail_nodes_csv("tri_fail_nodes.csv");
+        if (!tri_fail_nodes_csv) throw std::runtime_error("Cannot open tri_fail_nodes.csv");
+        tri_fail_nodes_csv << "tri_id,i0_ok,i1_ok,i2_ok,i0_id,i1_id,i2_id\n";
+
         const double nanv = std::numeric_limits<double>::quiet_NaN();
 
         double P_total_in = 0.0;
@@ -173,6 +197,9 @@ int main() {
             int i0 = tri_idx[0], i1 = tri_idx[1], i2 = tri_idx[2];
 
             if (!ok[i0] || !ok[i1] || !ok[i2]) {
+                tri_fail_nodes_csv << tri_id << ","
+                    << int(ok[i0]) << "," << int(ok[i1]) << "," << int(ok[i2]) << ","
+                    << i0 << "," << i1 << "," << i2 << "\n";
                 tri_status_csv << tri_id << ",1,invalid_meniscus_nodes,0,0,"
                     << nanv << "," << nanv << "," << nanv << "\n";
                 bottom_mesh_csv << tri_id << ",0,"
@@ -333,7 +360,6 @@ int main() {
 
             grid.add_triangle_uniform(tri2d, I);
             tri_used++;
-            tri_id++;
         }
 
         // =========================
@@ -354,6 +380,8 @@ int main() {
         std::cout << "Saved: triangle_mesh_meniscus.csv  (3D meniscus triangles with power diagnostics)\n";
         std::cout << "Saved: triangle_mesh_bottom.csv  (2D bottom footprints with delivered power)\n";
         std::cout << "Saved: triangle_status.csv  (per-triangle validity/exclusion reason)\n";
+        std::cout << "Saved: node_status.csv  (per-node meniscus projection diagnostics)\n";
+        std::cout << "Saved: tri_fail_nodes.csv  (triangle -> failing node mapping)\n";
 
     }
     catch (const std::exception& e) {

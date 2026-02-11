@@ -4,6 +4,8 @@
 #include <iostream>
 #include <vector>
 #include <array>
+#include <fstream>
+#include <iomanip>
 
 #include <algorithm>
 
@@ -133,9 +135,19 @@ int main() {
         // =========================
         em::Grid2D grid(-Rin, Rin, -Rin, Rin, Nx, Ny);
 
+        // Output dettagliato per confronto menisco vs piano fondo (per triangolo)
+        std::ofstream meniscus_csv("triangle_power_meniscus.csv");
+        if (!meniscus_csv) throw std::runtime_error("Cannot open triangle_power_meniscus.csv");
+        meniscus_csv << "tri_id,cx_m,cy_m,cz_m,area_face_m2,Sdotn_Wm2,Pin_W\n";
+
+        std::ofstream bottom_csv("triangle_power_bottom.csv");
+        if (!bottom_csv) throw std::runtime_error("Cannot open triangle_power_bottom.csv");
+        bottom_csv << "tri_id,foot_cx_m,foot_cy_m,foot_area_m2,path_len_m,alpha_dot_disp,att,Ponplane_W,I_Wm2\n";
+
         double P_total_in = 0.0;
         double P_total_on_plane = 0.0;
         int tri_used = 0;
+        int tri_id = 0;
 
         // =========================
         // 6) Loop triangoli: solve locale + deposita su griglia
@@ -156,7 +168,15 @@ int main() {
             // P_in ≈ (S · n_interface) * Area_face
             geom::Vec3 n_int = tri_normal_pointing_with_incident(tri, s_in);
             const double A_face = geom::area(tri);
-            const double Pin = std::max(0.0, geom::dot(res.S_avg, n_int)) * A_face;
+            const double Sdotn = geom::dot(res.S_avg, n_int);
+            const double Pin = std::max(0.0, Sdotn) * A_face;
+
+            const geom::Vec3 c_face = (tri.v0 + tri.v1 + tri.v2) / 3.0;
+            meniscus_csv << tri_id << ","
+                << std::setprecision(16)
+                << c_face.x << "," << c_face.y << "," << c_face.z << ","
+                << A_face << "," << Sdotn << "," << Pin << "\n";
+
             if (Pin <= 0.0) continue;
 
             P_total_in += Pin;
@@ -193,10 +213,10 @@ int main() {
             if (A_fp < 1e-18) continue;
 
             // Attenuazione (prima versione): usa Im(k) lungo lo spostamento del baricentro
-            geom::Vec3 c_face = (tri.v0 + tri.v1 + tri.v2) / 3.0;
             auto pc = proj_to_plane(c_face);
             if (!pc.first) continue;
             geom::Vec3 disp = pc.second - c_face;
+            const double path_len = geom::norm(disp);
 
             // alpha_vec = -Im(kp2)  (coerente con la tua scelta Im(kz)<=0 nel solver)
             geom::Vec3 alpha = {
@@ -204,7 +224,8 @@ int main() {
                 -std::imag(res.kp2_global.y),
                 -std::imag(res.kp2_global.z)
             };
-            double att = std::exp(-2.0 * geom::dot(alpha, disp));
+            const double alpha_dot_disp = geom::dot(alpha, disp);
+            double att = std::exp(-2.0 * alpha_dot_disp);
             att = std::clamp(att, 0.0, 1.0);
 
             const double P_on_plane = Pin * att;
@@ -213,8 +234,21 @@ int main() {
             // Intensità “uniforme” sul footprint: I = P / Area
             const double I = P_on_plane / A_fp;
 
+            const geom::Vec2 c_fp{
+                (tri2d[0].x + tri2d[1].x + tri2d[2].x) / 3.0,
+                (tri2d[0].y + tri2d[1].y + tri2d[2].y) / 3.0
+            };
+
+            bottom_csv << tri_id << ","
+                << std::setprecision(16)
+                << c_fp.x << "," << c_fp.y << ","
+                << A_fp << "," << path_len << ","
+                << alpha_dot_disp << "," << att << ","
+                << P_on_plane << "," << I << "\n";
+
             grid.add_triangle_uniform(tri2d, I);
             tri_used++;
+            tri_id++;
         }
 
         // =========================
@@ -230,6 +264,8 @@ int main() {
         std::cout << "Total power into medium2 (approx) = " << P_total_in << " W\n";
         std::cout << "Total power on plane z1=Cpp (approx) = " << P_total_on_plane << " W\n";
         std::cout << "Saved: field_map_cpp.csv  (x,y,value) where value ~ intensity [W/m^2]\n";
+        std::cout << "Saved: triangle_power_meniscus.csv  (per-triangle interface power diagnostics)\n";
+        std::cout << "Saved: triangle_power_bottom.csv  (per-triangle delivered power at bottom plane)\n";
 
     }
     catch (const std::exception& e) {

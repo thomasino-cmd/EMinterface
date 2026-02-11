@@ -8,7 +8,7 @@ namespace em {
 
     // Parametri (tutti in SI):
     // V   [m^3] volume soluzione (positivo)
-    // Dm  [m]   profondità menisco (può essere <0 o >0)
+    // Dm  [m]   profondità menisco (può essere <0 o >0) // il nostro menisco è concavo 
     // Rin [m]   raggio interno cuvetta (positivo)
     struct MeniscusParams {
         double V{ 0.0 };

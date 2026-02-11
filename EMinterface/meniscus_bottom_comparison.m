@@ -1,22 +1,21 @@
 %% meniscus_bottom_comparison.m
-% Thesis-ready comparison figure:
-%   (A) 3D concave meniscus triangulated surface colored by interface power flux
-%   (B) 2D bottom-plane triangulated footprints colored by delivered irradiance
+% Thesis-ready comparison:
+%   (A) 3D concave meniscus triangulated surface with power heatmap
+%   (B) 2D bottom-plane triangulated footprints with delivered irradiance heatmap
 %
 % Required CSV (from tile_overlap.cpp):
 %   - triangle_mesh_meniscus.csv
 %   - triangle_mesh_bottom.csv
-%
-% Optional legacy CSV (not used here): field_map_cpp.csv, triangle_power_*.csv
 
 clear; clc; close all;
 
 %% ===================== CONFIG =====================
+cfg.dataDir = 'D:\cose random\università\3anno\CAMPI ELETTROMAGNETICI\TESI\outputV2\testA\050';
 cfg.fileMeniscus = 'triangle_mesh_meniscus.csv';
 cfg.fileBottom   = 'triangle_mesh_bottom.csv';
 
 cfg.powerModeMeniscus = 'Sdotn'; % 'Sdotn' [W/m^2] OR 'PinDensity' [W/m^2]
-cfg.unitLabel = 'mW/cm^2';       % display unit for colorbars
+cfg.unitLabel = 'mW/cm^2';
 cfg.toDisplay = 0.1;             % W/m^2 -> mW/cm^2
 
 cfg.fontSize = 12;
@@ -25,9 +24,12 @@ cfg.edgeAlpha2D = 0.08;
 cfg.edgeColor = [0.2 0.2 0.2];
 cfg.cmap = turbo(256);
 
-% To emphasize small differences in weak-loss media, use robust percentile limits
-cfg.cLimPercentile = [2 98];   % [low high] percentiles
-cfg.sameCLim = true;           % true => same color limits for both panels
+% To emphasize small differences in weak-loss media
+cfg.cLimPercentile = [2 98];
+cfg.sameCLim = true;
+
+% Optional: keep only positive delivered power triangles on bottom panel
+cfg.filterBottomPositive = false;
 
 cfg.exportFigure = false;
 cfg.exportName = 'thesis_meniscus_vs_bottom_power.png';
@@ -35,71 +37,89 @@ cfg.exportDPI = 350;
 %% ==================================================
 
 % ---------- Load ----------
-Tm = readtable(cfg.fileMeniscus);
-Tb = readtable(cfg.fileBottom);
+pathMeniscus = fullfile(cfg.dataDir, cfg.fileMeniscus);
+pathBottom   = fullfile(cfg.dataDir, cfg.fileBottom);
+
+if ~isfile(pathMeniscus)
+    error('Unable to find meniscus CSV: %s', pathMeniscus);
+end
+if ~isfile(pathBottom)
+    error('Unable to find bottom CSV: %s', pathBottom);
+end
+
+Tm = readtable(pathMeniscus);
+Tb = readtable(pathBottom);
 
 reqM = {'tri_id','v0x_m','v0y_m','v0z_m','v1x_m','v1y_m','v1z_m','v2x_m','v2y_m','v2z_m','area_face_m2','Sdotn_Wm2','Pin_W','R','T','A'};
-reqB = {'tri_id','p0x_m','p0y_m','p1x_m','p1y_m','p2x_m','p2y_m','foot_area_m2','att','Ponplane_W','I_Wm2'};
-check_columns(Tm, reqM, cfg.fileMeniscus);
-check_columns(Tb, reqB, cfg.fileBottom);
+reqB = {'tri_id','valid','p0x_m','p0y_m','p1x_m','p1y_m','p2x_m','p2y_m','foot_area_m2','att','Ponplane_W','I_Wm2','status_code','status_label'};
+check_columns(Tm, reqM, pathMeniscus);
+check_columns(Tb, reqB, pathBottom);
 
-% Keep only triangles with physical transmission to bottom in Tb
-Tb = Tb(Tb.Ponplane_W > 0 & isfinite(Tb.Ponplane_W), :);
+if cfg.filterBottomPositive
+    Tb = Tb(Tb.Ponplane_W > 0 & isfinite(Tb.Ponplane_W), :);
+end
+
+if isempty(Tm)
+    error('Meniscus table is empty.');
+end
 if isempty(Tb)
-    error('No bottom triangles with Ponplane_W > 0 found.');
+    error('Bottom table is empty.');
 end
 
-% Join to map R/T/A and other meniscus values if needed
-T = innerjoin(Tm, Tb, 'Keys', 'tri_id');
-if isempty(T)
-    error('No common tri_id between meniscus and bottom mesh CSV files.');
+% Diagnostics: why triangles are invalid/excluded in CPP
+if any(~Tb.valid)
+    fprintf('\nBottom exclusion diagnostics (from CSV):\n');
+    [g,labels] = findgroups(string(Tb.status_label));
+    counts = splitapply(@numel, Tb.status_label, g);
+    for ii = 1:numel(labels)
+        fprintf('  %-28s : %d\n', labels(ii), counts(ii));
+    end
 end
 
-%% ---------- Build triangulations ----------
-% Meniscus mesh (3D): 3 unique vertices per triangle -> explicit triangulation
-[Vm, Fm] = build_tri_mesh_3d(T.v0x_m, T.v0y_m, T.v0z_m, T.v1x_m, T.v1y_m, T.v1z_m, T.v2x_m, T.v2y_m, T.v2z_m);
+TbPlot = Tb(Tb.valid == 1 & isfinite(Tb.p0x_m) & isfinite(Tb.p1x_m) & isfinite(Tb.p2x_m), :);
+if isempty(TbPlot)
+    error('No valid bottom triangles to plot (valid==1).');
+end
 
-% Bottom mesh (2D in xy): triangulated footprints
-[Vb, Fb] = build_tri_mesh_2d(T.p0x_m, T.p0y_m, T.p1x_m, T.p1y_m, T.p2x_m, T.p2y_m);
+%% ---------- Meniscus triangulation (ALL triangles, no exclusion) ----------
+[Vm, Fm] = build_tri_mesh_3d(Tm.v0x_m, Tm.v0y_m, Tm.v0z_m, ...
+                             Tm.v1x_m, Tm.v1y_m, Tm.v1z_m, ...
+                             Tm.v2x_m, Tm.v2y_m, Tm.v2z_m);
 
-%% ---------- Triangle scalar fields ----------
-% Meniscus scalar to show on 3D surface
 switch lower(cfg.powerModeMeniscus)
     case 'sdotn'
-        Ctri_m = T.Sdotn_Wm2;                  % interface power flux density [W/m^2]
+        Ctri_m = Tm.Sdotn_Wm2;
         mLabel = 'Meniscus interface flux S\cdot n';
     case 'pindensity'
-        Ctri_m = T.Pin_W ./ max(T.area_face_m2, eps); % [W/m^2]
+        Ctri_m = Tm.Pin_W ./ max(Tm.area_face_m2, eps);
         mLabel = 'Meniscus Pin / area';
     otherwise
         error('Unknown cfg.powerModeMeniscus: %s', cfg.powerModeMeniscus);
 end
+Ctri_m_disp = Ctri_m * cfg.toDisplay;
 
-% Bottom scalar (delivered irradiance)
-Ctri_b = T.I_Wm2;                              % [W/m^2]
+%% ---------- Bottom triangulation (all available bottom triangles) ----------
+[Vb, Fb] = build_tri_mesh_2d(TbPlot.p0x_m, TbPlot.p0y_m, TbPlot.p1x_m, TbPlot.p1y_m, TbPlot.p2x_m, TbPlot.p2y_m);
+Ctri_b = TbPlot.I_Wm2;
+Ctri_b_disp = Ctri_b * cfg.toDisplay;
 bLabel = 'Bottom delivered irradiance';
 
-% Convert display units (mW/cm^2)
-Ctri_m_disp = Ctri_m * cfg.toDisplay;
-Ctri_b_disp = Ctri_b * cfg.toDisplay;
-
-% Color limits (robust)
+%% ---------- Color limits (robust) ----------
 if cfg.sameCLim
     cAll = [Ctri_m_disp; Ctri_b_disp];
+    cAll = cAll(isfinite(cAll));
     clim = prctile(cAll, cfg.cLimPercentile);
 else
-    climM = prctile(Ctri_m_disp, cfg.cLimPercentile);
-    climB = prctile(Ctri_b_disp, cfg.cLimPercentile);
+    climM = prctile(Ctri_m_disp(isfinite(Ctri_m_disp)), cfg.cLimPercentile);
+    climB = prctile(Ctri_b_disp(isfinite(Ctri_b_disp)), cfg.cLimPercentile);
 end
 
-%% ---------- Figure: only the requested comparison ----------
+%% ---------- Figure ----------
 fig = figure('Color','w','Position',[80 80 1300 580]);
-tl = tiledlayout(fig,1,2,'Padding','compact','TileSpacing','compact'); %#ok<NASGU>
+tiledlayout(fig,1,2,'Padding','compact','TileSpacing','compact');
 
-% --- Panel A: 3D meniscus, triangulated, colored by interface power ---
+% --- Panel A: 3D meniscus ---
 ax1 = nexttile; hold(ax1,'on'); box(ax1,'on');
-
-% Face colors per triangle -> repeat for each face
 trisurf(Fm, Vm(:,1)*1e3, Vm(:,2)*1e3, Vm(:,3)*1e3, ...
     'FaceColor','flat', ...
     'FaceVertexCData', repelem(Ctri_m_disp, 3), ...
@@ -114,10 +134,8 @@ cb1 = colorbar(ax1); cb1.Label.String = sprintf('%s (%s)', mLabel, cfg.unitLabel
 if cfg.sameCLim, caxis(ax1, clim); else, caxis(ax1, climM); end
 set(ax1,'FontSize',cfg.fontSize,'LineWidth',1);
 
-% --- Panel B: Bottom plane triangulated footprints, colored by delivered I ---
+% --- Panel B: 2D bottom plane ---
 ax2 = nexttile; hold(ax2,'on'); box(ax2,'on');
-
-% 2D triangulation (z=0 just for patch rendering)
 Vbz = [Vb(:,1)*1e3, Vb(:,2)*1e3, zeros(size(Vb,1),1)];
 trisurf(Fb, Vbz(:,1), Vbz(:,2), Vbz(:,3), ...
     'FaceColor','flat', ...
@@ -133,9 +151,9 @@ cb2 = colorbar(ax2); cb2.Label.String = sprintf('%s (%s)', bLabel, cfg.unitLabel
 if cfg.sameCLim, caxis(ax2, clim); else, caxis(ax2, climB); end
 set(ax2,'FontSize',cfg.fontSize,'LineWidth',1);
 
-% Global summary annotation
-PinTot = nansum(T.Pin_W);
-PoutTot = nansum(T.Ponplane_W);
+% Global summary from full meniscus + full bottom tables
+PinTot  = sum(Tm.Pin_W, 'omitnan');
+PoutTot = sum(Tb.Ponplane_W, 'omitnan');
 etaG = PoutTot / max(PinTot, eps);
 lossG = 1 - etaG;
 
@@ -147,7 +165,8 @@ if cfg.exportFigure
 end
 
 fprintf('\n=== Thesis Comparison Summary ===\n');
-fprintf('Triangles in comparison: %d\n', height(T));
+fprintf('Meniscus triangles plotted: %d\n', height(Tm));
+fprintf('Bottom triangles plotted:   %d (valid) / %d (all)\n', height(TbPlot), height(Tb));
 fprintf('Pin,total       = %.6g W\n', PinTot);
 fprintf('Ponplane,total  = %.6g W\n', PoutTot);
 fprintf('eta_global      = %.6f\n', etaG);
@@ -162,7 +181,6 @@ end
 end
 
 function [V,F] = build_tri_mesh_3d(v0x,v0y,v0z,v1x,v1y,v1z,v2x,v2y,v2z)
-% Build explicit triangulation with no vertex sharing (robust/simple)
 n = numel(v0x);
 V = zeros(3*n,3);
 F = zeros(n,3);

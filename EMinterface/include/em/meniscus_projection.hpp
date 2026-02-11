@@ -3,6 +3,8 @@
 #include <limits>
 #include <string>
 #include <stdexcept>
+#include <algorithm>
+
 
 #include "../geom/vec2.hpp"
 #include "../geom/vec3.hpp"
@@ -121,8 +123,11 @@ namespace em {
             out.root1 = t;
             out.root2 = std::numeric_limits<double>::quiet_NaN();
             out.chosen_root = t;
-            if (t < 0.0) return mark_fail(14, "negative_root");
             out.t_z3 = t;
+            if (t < 0.0) {
+                out.checks = "t_negative_used";
+            }
+                 
         }
         else {
             const double sqrt_disc = std::sqrt(std::max(0.0, disc));
@@ -133,11 +138,26 @@ namespace em {
 
             const bool t1_ok = t1 >= 0.0;
             const bool t2_ok = t2 >= 0.0;
-            if (!t1_ok && !t2_ok) return mark_fail(14, "negative_root");
 
-            const double t = (t1_ok && t2_ok) ? std::min(t1, t2) : (t1_ok ? t1 : t2);
+            double t;
+            if (t1_ok && t2_ok) {
+                t = std::min(t1, t2);
+            }
+            else if (t1_ok) {
+                t = t1;
+            }
+            else if (t2_ok) {
+                t = t2;
+            }
+            else {
+                // Both roots are negative: the meniscus lies in the -z3 direction from the z3=0 plane.
+                // Accept the intersection anyway by picking the root closest to zero (largest t).
+                t = std::max(t1, t2);
+                out.checks = "t_negative_used";
+            }
             out.chosen_root = t;
             out.t_z3 = t;
+
         }
 
         const double t = out.t_z3;

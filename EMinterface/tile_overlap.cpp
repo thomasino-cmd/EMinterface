@@ -43,7 +43,7 @@ int main() {
         const double Rf = 5.64e-3;     // [m] raggio fascio
         
         //DISALLINEAMENTO LATERALE
-        const double x_af = 0.0e-3;     // [m] offset asse fascio oscilla tra 0.0mm E 0.5mm
+        const double x_af = 1.5e-3;     // [m] offset asse fascio oscilla tra 0.0mm E 0.5mm
         const double theta = 0 * utils::pi / 180.0;      //10.0 gradi di inclinazione rispetto alla verticale (esempio)
         const double phi = 0 * utils::pi / 180.0;        //30 gradi di rotazione attorno all'asse z (esempio)
 

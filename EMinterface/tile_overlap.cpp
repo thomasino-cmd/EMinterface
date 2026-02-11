@@ -144,6 +144,15 @@ int main() {
         if (!bottom_csv) throw std::runtime_error("Cannot open triangle_power_bottom.csv");
         bottom_csv << "tri_id,foot_cx_m,foot_cy_m,foot_area_m2,path_len_m,alpha_dot_disp,att,Ponplane_W,I_Wm2\n";
 
+        // Geometria triangoli per plotting continuo (menisco 3D e fondo 2D)
+        std::ofstream meniscus_mesh_csv("triangle_mesh_meniscus.csv");
+        if (!meniscus_mesh_csv) throw std::runtime_error("Cannot open triangle_mesh_meniscus.csv");
+        meniscus_mesh_csv << "tri_id,v0x_m,v0y_m,v0z_m,v1x_m,v1y_m,v1z_m,v2x_m,v2y_m,v2z_m,area_face_m2,Sdotn_Wm2,Pin_W,R,T,A\n";
+
+        std::ofstream bottom_mesh_csv("triangle_mesh_bottom.csv");
+        if (!bottom_mesh_csv) throw std::runtime_error("Cannot open triangle_mesh_bottom.csv");
+        bottom_mesh_csv << "tri_id,p0x_m,p0y_m,p1x_m,p1y_m,p2x_m,p2y_m,foot_area_m2,att,Ponplane_W,I_Wm2\n";
+
         double P_total_in = 0.0;
         double P_total_on_plane = 0.0;
         int tri_used = 0;
@@ -177,13 +186,21 @@ int main() {
                 << c_face.x << "," << c_face.y << "," << c_face.z << ","
                 << A_face << "," << Sdotn << "," << Pin << "\n";
 
-            if (Pin <= 0.0) continue;
+            meniscus_mesh_csv << tri_id << ","
+                << std::setprecision(16)
+                << tri.v0.x << "," << tri.v0.y << "," << tri.v0.z << ","
+                << tri.v1.x << "," << tri.v1.y << "," << tri.v1.z << ","
+                << tri.v2.x << "," << tri.v2.y << "," << tri.v2.z << ","
+                << A_face << "," << Sdotn << "," << Pin << ","
+                << res.R << "," << res.T << "," << res.A << "\n";
+
+            if (Pin <= 0.0) { tri_id++; continue; }
 
             P_total_in += Pin;
 
             // Proietta triangolo sul piano z1=Cpp lungo direzione di trasporto energia (Poynting)
             geom::Vec3 dir = res.d_poynting;
-            if (std::abs(dir.z) < 1e-12) continue; // quasi parallelo al piano
+            if (std::abs(dir.z) < 1e-12) { tri_id++; continue; } // quasi parallelo al piano
 
             auto proj_to_plane = [&](const geom::Vec3& p)->std::pair<bool, geom::Vec3> {
                 double t = (Cpp - p.z) / dir.z;
@@ -194,7 +211,7 @@ int main() {
             auto p0 = proj_to_plane(tri.v0);
             auto p1 = proj_to_plane(tri.v1);
             auto p2 = proj_to_plane(tri.v2);
-            if (!p0.first || !p1.first || !p2.first) continue;
+            if (!p0.first || !p1.first || !p2.first) { tri_id++; continue; }
 
             std::array<geom::Vec2, 3> tri2d = {
                 geom::Vec2{p0.second.x, p0.second.y},
@@ -210,11 +227,11 @@ int main() {
                 return std::abs(a);
                 };
             const double A_fp = area2(tri2d);
-            if (A_fp < 1e-18) continue;
+            if (A_fp < 1e-18) { tri_id++; continue; }
 
             // Attenuazione (prima versione): usa Im(k) lungo lo spostamento del baricentro
             auto pc = proj_to_plane(c_face);
-            if (!pc.first) continue;
+            if (!pc.first) { tri_id++; continue; }
             geom::Vec3 disp = pc.second - c_face;
             const double path_len = geom::norm(disp);
 
@@ -246,6 +263,13 @@ int main() {
                 << alpha_dot_disp << "," << att << ","
                 << P_on_plane << "," << I << "\n";
 
+            bottom_mesh_csv << tri_id << ","
+                << std::setprecision(16)
+                << tri2d[0].x << "," << tri2d[0].y << ","
+                << tri2d[1].x << "," << tri2d[1].y << ","
+                << tri2d[2].x << "," << tri2d[2].y << ","
+                << A_fp << "," << att << "," << P_on_plane << "," << I << "\n";
+
             grid.add_triangle_uniform(tri2d, I);
             tri_used++;
             tri_id++;
@@ -266,6 +290,8 @@ int main() {
         std::cout << "Saved: field_map_cpp.csv  (x,y,value) where value ~ intensity [W/m^2]\n";
         std::cout << "Saved: triangle_power_meniscus.csv  (per-triangle interface power diagnostics)\n";
         std::cout << "Saved: triangle_power_bottom.csv  (per-triangle delivered power at bottom plane)\n";
+        std::cout << "Saved: triangle_mesh_meniscus.csv  (3D meniscus triangles with power diagnostics)\n";
+        std::cout << "Saved: triangle_mesh_bottom.csv  (2D bottom footprints with delivered power)\n";
 
     }
     catch (const std::exception& e) {

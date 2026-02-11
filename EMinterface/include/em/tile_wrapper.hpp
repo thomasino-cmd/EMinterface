@@ -87,7 +87,8 @@ inline Vector3D rotate_local_to_global(const Vector3D& v_local,
 inline LocalFrame make_local_frame(const geom::Triangle& tri,
                                    geom::Vec3 s_in_global_unit,
                                    bool flip_normal_to_match_incident = true,
-                                   double eps = 1e-12) {
+                                   double eps = 1e-12) 
+{
     s_in_global_unit = geom::normalize(s_in_global_unit, eps);
 
     geom::Vec3 ez = geom::normal_unit(tri, eps);
@@ -115,6 +116,11 @@ inline LocalFrame make_local_frame(const geom::Triangle& tri,
     return LocalFrame{ex, ey, ez, theta};
 }
 
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+
 // Build incident field vector in the LOCAL solver coordinate system.
 
 inline Vector3D make_incident_E_local(double theta_i, std::complex<double> A_inc, bool isTE) {
@@ -137,6 +143,17 @@ inline geom::Vec3 poynting_avg_real(const Vector3D& E, const Vector3D& k_vec,
     return {std::real(S.x), std::real(S.y), std::real(S.z)};
 }
 
+
+
+/// <summary>
+/// main function of the file
+/// </summary>
+/// <param name="tri"></param>
+/// <param name="media"></param>
+/// <param name="beam"></param>
+/// <param name="flip_normal_to_match_incident"></param>
+/// <param name="eps"></param>
+/// <returns></returns>
 inline TileSolveResult solve_on_triangle(const geom::Triangle& tri,
                                         const MediaParams& media,
                                         const BeamParams& beam,

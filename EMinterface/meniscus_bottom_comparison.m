@@ -10,7 +10,8 @@
 clear; clc; close all;
 
 %% ===================== CONFIG =====================
-cfg.dataDir = 'D:\cose random\università\3anno\CAMPI ELETTROMAGNETICI\TESI\outputV2\testA\050';
+%cfg.dataDir = 'D:\cose random\università\3anno\CAMPI ELETTROMAGNETICI\TESI\outputV2\testA\050';
+cfg.dataDir = 'C:\Users\thoma\source\repos\EMinterface\EMinterface';
 cfg.fileMeniscus = 'triangle_mesh_meniscus.csv';
 cfg.fileBottom   = 'triangle_mesh_bottom.csv';
 
@@ -34,6 +35,20 @@ cfg.filterBottomPositive = false;
 cfg.exportFigure = false;
 cfg.exportName = 'thesis_meniscus_vs_bottom_power.png';
 cfg.exportDPI = 350;
+
+% Global-loss reference metric:
+%  - 'meniscus_to_bottom': loss relative to power that reached meniscus
+%  - 'source_to_bottom'  : loss relative to total source power emitted
+cfg.globalLossMode = 'source_to_bottom';
+
+% Source power model (used when globalLossMode='source_to_bottom').
+% If sourcePowerOverride_W is provided, it has priority.
+cfg.sourcePowerOverride_W = [];
+
+% Default source model coherent with tile_overlap.cpp demo parameters
+% (uniform plane-wave beam over disk of radius Rf).
+cfg.sourceBeamRadius_m = 5.64e-3;      % Rf in tile_overlap.cpp
+cfg.sourceEamp_Vpm = 2744.9;           % |A_inc| in tile_overlap.cpp
 %% ==================================================
 
 % ---------- Load ----------
@@ -55,10 +70,6 @@ reqB = {'tri_id','valid','p0x_m','p0y_m','p1x_m','p1y_m','p2x_m','p2y_m','foot_a
 check_columns(Tm, reqM, pathMeniscus);
 check_columns(Tb, reqB, pathBottom);
 
-if cfg.filterBottomPositive
-    Tb = Tb(Tb.Ponplane_W > 0 & isfinite(Tb.Ponplane_W), :);
-end
-
 if isempty(Tm)
     error('Meniscus table is empty.');
 end
@@ -76,7 +87,14 @@ if any(~Tb.valid)
     end
 end
 
-TbPlot = Tb(Tb.valid == 1 & isfinite(Tb.p0x_m) & isfinite(Tb.p1x_m) & isfinite(Tb.p2x_m), :);
+TbAll   = Tb;                              % output completo simulazione
+TbValid = TbAll(TbAll.valid==1, :);        % triangoli accettati dal C++
+TbPlot  = TbValid;                          % ciò che visualizzi
+
+if cfg.filterBottomPositive
+    TbPlot = TbPlot(TbPlot.Ponplane_W > 0 & isfinite(TbPlot.Ponplane_W), :);
+end
+
 if isempty(TbPlot)
     error('No valid bottom triangles to plot (valid==1).');
 end
@@ -153,12 +171,36 @@ set(ax2,'FontSize',cfg.fontSize,'LineWidth',1);
 
 % Global summary from full meniscus + full bottom tables
 PinTot  = sum(Tm.Pin_W, 'omitnan');
-PoutTot = sum(Tb.Ponplane_W, 'omitnan');
-etaG = PoutTot / max(PinTot, eps);
-lossG = 1 - etaG;
+PoutTot = sum(TbAll.Ponplane_W, 'omitnan');
 
-sgtitle(sprintf('Power comparison meniscus \rightarrow bottom   |   \eta_{global}=%.4f   (loss=%.2f%%)', ...
-    etaG, 100*lossG), 'FontWeight','bold');
+% Legacy metric (kept for diagnostic comparison): meniscus -> bottom
+etaMeniscus = PoutTot / max(PinTot, eps);
+lossMeniscus = 1 - etaMeniscus;
+
+% Requested metric: source -> bottom
+PsourceTot = compute_source_power(cfg);
+if ~isfinite(PsourceTot) || PsourceTot <= 0
+    warning('Invalid source power estimate (%.6g W). Falling back to meniscus-based metric.', PsourceTot);
+    PsourceTot = PinTot;
+end
+etaSource = PoutTot / max(PsourceTot, eps);
+lossSource = 1 - etaSource;
+
+switch lower(cfg.globalLossMode)
+    case 'source_to_bottom'
+        etaShown = etaSource;
+        lossShown = lossSource;
+        refLabel = 'source\rightarrowbottom';
+    case 'meniscus_to_bottom'
+        etaShown = etaMeniscus;
+        lossShown = lossMeniscus;
+        refLabel = 'meniscus\rightarrowbottom';
+    otherwise
+        error('Unknown cfg.globalLossMode: %s', cfg.globalLossMode);
+end
+
+sgtitle(sprintf('Power comparison meniscus \rightarrow bottom   |   \eta_{global}[%s]=%.4f   (loss=%.2f%%)', ...
+    refLabel, etaShown, 100*lossShown), 'FontWeight','bold');
 
 if cfg.exportFigure
     exportgraphics(fig, cfg.exportName, 'Resolution', cfg.exportDPI);
@@ -166,13 +208,32 @@ end
 
 fprintf('\n=== Thesis Comparison Summary ===\n');
 fprintf('Meniscus triangles plotted: %d\n', height(Tm));
-fprintf('Bottom triangles plotted:   %d (valid) / %d (all)\n', height(TbPlot), height(Tb));
+fprintf('Bottom triangles plotted:   %d (valid) / %d (all)\n', height(TbPlot), height(TbAll));
+fprintf('Psource,total   = %.6g W\n', PsourceTot);
 fprintf('Pin,total       = %.6g W\n', PinTot);
 fprintf('Ponplane,total  = %.6g W\n', PoutTot);
-fprintf('eta_global      = %.6f\n', etaG);
-fprintf('global loss     = %.3f %%\n', 100*lossG);
+fprintf('eta_source      = %.6f\n', etaSource);
+fprintf('loss_source     = %.3f %%\n', 100*lossSource);
+fprintf('eta_meniscus    = %.6f\n', etaMeniscus);
+fprintf('loss_meniscus   = %.3f %%\n', 100*lossMeniscus);
 
 %% ---------------- local functions ----------------
+function Psource = compute_source_power(cfg)
+if ~isempty(cfg.sourcePowerOverride_W)
+    Psource = cfg.sourcePowerOverride_W;
+    return;
+end
+
+% Plane-wave estimate in medium 1 (air):
+% I = |E|^2 / (2*eta0),   P = I * pi*Rf^2
+EPS0 = 8.854187817e-12;
+MU0 = 1.2566370614359173e-6;
+eta0 = sqrt(MU0 / EPS0);
+
+I0 = (abs(cfg.sourceEamp_Vpm)^2) / (2*eta0);
+Psource = I0 * pi * cfg.sourceBeamRadius_m^2;
+end
+
 function check_columns(T, requiredCols, fileName)
 missing = setdiff(requiredCols, T.Properties.VariableNames);
 if ~isempty(missing)

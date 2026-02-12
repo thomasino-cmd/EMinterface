@@ -1,6 +1,7 @@
 ﻿#pragma once
 #include <cmath>
 #include <limits>
+#include <string>
 #include <stdexcept>
 
 #include "../geom/vec2.hpp"
@@ -14,6 +15,16 @@ namespace em {
         bool ok{ false };
         double t_z3{ 0.0 };       // valore di z3 trovato
         geom::Vec3 p1;          // punto su menisco in coordinate x1
+
+        int reason_code{ 0 };
+        const char* reason_label{ "ok" };
+
+        double disc{ std::numeric_limits<double>::quiet_NaN() };
+        double root1{ std::numeric_limits<double>::quiet_NaN() };
+        double root2{ std::numeric_limits<double>::quiet_NaN() };
+        double chosen_root{ std::numeric_limits<double>::quiet_NaN() };
+
+        std::string checks;
     };
 
     // Risolve a*t^2 + b*t + c = 0 e sceglie la radice più piccola >=0
@@ -51,6 +62,14 @@ namespace em {
         double eps = 1e-12
     ) {
         ProjectionResult out;
+
+        auto mark_fail = [&](int code, const char* label, const std::string& checks = std::string{}) {
+            out.ok = false;
+            out.reason_code = code;
+            out.reason_label = label;
+            out.checks = checks;
+            return out;
+            };
 
         const auto& P = fr.params();
         const double th = P.theta;
@@ -91,11 +110,37 @@ namespace em {
         const double B = k * c1 - z1_1;
         const double C = k * c0 + apm - z1_0;
 
-        double t = 0.0;
-        if (!smallest_nonneg_root(A, B, C, t)) {
-            out.ok = false;
-            return out;
+        const double disc = B * B - 4.0 * A * C;
+        out.disc = disc;
+        if (!std::isfinite(disc)) return mark_fail(11, "disc_nan");
+        if (disc < 0.0) return mark_fail(12, "disc_negative");
+
+        if (std::abs(A) < 1e-14) {
+            if (std::abs(B) < 1e-14) return mark_fail(13, "degenerate_equation");
+            const double t = -C / B;
+            out.root1 = t;
+            out.root2 = std::numeric_limits<double>::quiet_NaN();
+            out.chosen_root = t;
+            if (t < 0.0) return mark_fail(14, "negative_root");
+            out.t_z3 = t;
         }
+        else {
+            const double sqrt_disc = std::sqrt(std::max(0.0, disc));
+            const double t1 = (-B - sqrt_disc) / (2.0 * A);
+            const double t2 = (-B + sqrt_disc) / (2.0 * A);
+            out.root1 = t1;
+            out.root2 = t2;
+
+            const bool t1_ok = t1 >= 0.0;
+            const bool t2_ok = t2 >= 0.0;
+            if (!t1_ok && !t2_ok) return mark_fail(14, "negative_root");
+
+            const double t = (t1_ok && t2_ok) ? std::min(t1, t2) : (t1_ok ? t1 : t2);
+            out.chosen_root = t;
+            out.t_z3 = t;
+        }
+
+        const double t = out.t_z3;
 
         // Punto su menisco
         const double x1 = x1_0 + x1_1 * t;
@@ -104,13 +149,19 @@ namespace em {
 
         // Check r <= Rin (opzionale ma consigliato)
         if (!men.inside_cuvette(x1, y1, eps)) {
-            out.ok = false;
-            return out;
+            return mark_fail(10, "outside_Rin", "r>Rin");
+        }
+
+        const double z_expected = men.f2(x1, y1);
+        if (std::abs(z1 - z_expected) > 1e-9) {
+            return mark_fail(15, "surface_mismatch", "abs(z1-f2)>1e-9");
         }
 
         out.ok = true;
         out.t_z3 = t;
         out.p1 = { x1, y1, z1 };
+        out.reason_code = 0;
+        out.reason_label = "ok";
         return out;
     }
 

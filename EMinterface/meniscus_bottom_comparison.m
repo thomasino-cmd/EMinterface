@@ -10,8 +10,8 @@
 clear; clc; close all;
 
 %% ===================== CONFIG =====================
-%cfg.dataDir = 'D:\cose random\università\3anno\CAMPI ELETTROMAGNETICI\TESI\outputV2\testA\050';
-cfg.dataDir = 'C:\Users\thoma\source\repos\EMinterface\EMinterface';
+cfg.dataDir = 'D:\cose random\università\3anno\CAMPI ELETTROMAGNETICI\TESI\outputV2\testA\150';
+%cfg.dataDir = 'C:\Users\thoma\source\repos\EMinterface\EMinterface';
 cfg.fileMeniscus = 'triangle_mesh_meniscus.csv';
 cfg.fileBottom   = 'triangle_mesh_bottom.csv';
 
@@ -32,9 +32,14 @@ cfg.sameCLim = true;
 % Optional: keep only positive delivered power triangles on bottom panel
 cfg.filterBottomPositive = false;
 
-cfg.exportFigure = false;
-cfg.exportName = 'thesis_meniscus_vs_bottom_power.png';
+% --- AUTO EXPORT SETTINGS ---
+cfg.exportFigures = true;      % <--- metti false se non vuoi salvare
+cfg.exportDir = cfg.dataDir;   % <--- automatico: stessa cartella dei CSV
 cfg.exportDPI = 350;
+
+% nomi file (senza path): verranno salvati in cfg.exportDir
+cfg.exportMeniscusName = 'meniscus_3D_power.png';
+cfg.exportBottomName   = 'bottom_2D_irradiance.png';
 
 % Global-loss reference metric:
 %  - 'meniscus_to_bottom': loss relative to power that reached meniscus
@@ -87,8 +92,8 @@ if any(~Tb.valid)
     end
 end
 
-TbAll   = Tb;                              % output completo simulazione
-TbValid = TbAll(TbAll.valid==1, :);        % triangoli accettati dal C++
+TbAll   = Tb;                               % output completo simulazione
+TbValid = TbAll(TbAll.valid==1, :);         % triangoli accettati dal C++
 TbPlot  = TbValid;                          % ciò che visualizzi
 
 if cfg.filterBottomPositive
@@ -132,7 +137,7 @@ else
     climB = prctile(Ctri_b_disp(isfinite(Ctri_b_disp)), cfg.cLimPercentile);
 end
 
-%% ---------- Figure ----------
+%% ---------- (Optional) on-screen combined figure ----------
 fig = figure('Color','w','Position',[80 80 1300 580]);
 tiledlayout(fig,1,2,'Padding','compact','TileSpacing','compact');
 
@@ -145,8 +150,7 @@ trisurf(Fm, Vm(:,1)*1e3, Vm(:,2)*1e3, Vm(:,3)*1e3, ...
 
 view(ax1, 36, 22);
 axis(ax1,'equal'); grid(ax1,'on');
-xlabel(ax1, 'x (mm)'); ylabel(ax1, 'y (mm)'); zlabel(ax1, 'z (mm)');
-title(ax1, sprintf('Meniscus 3D triangulated (%s)', mLabel));
+% xlabel(ax1, 'x (mm)'); ylabel(ax1, 'y (mm)'); zlabel(ax1, 'z (mm)');
 colormap(ax1, cfg.cmap);
 cb1 = colorbar(ax1); cb1.Label.String = sprintf('%s (%s)', mLabel, cfg.unitLabel);
 if cfg.sameCLim, caxis(ax1, clim); else, caxis(ax1, climM); end
@@ -162,14 +166,58 @@ trisurf(Fb, Vbz(:,1), Vbz(:,2), Vbz(:,3), ...
 
 view(ax2, 2);
 axis(ax2,'equal'); grid(ax2,'on');
-xlabel(ax2, 'x (mm)'); ylabel(ax2, 'y (mm)');
-title(ax2, sprintf('Bottom plane triangulated (%s)', bLabel));
+% xlabel(ax2, 'x (mm)'); ylabel(ax2, 'y (mm)');
 colormap(ax2, cfg.cmap);
 cb2 = colorbar(ax2); cb2.Label.String = sprintf('%s (%s)', bLabel, cfg.unitLabel);
 if cfg.sameCLim, caxis(ax2, clim); else, caxis(ax2, climB); end
 set(ax2,'FontSize',cfg.fontSize,'LineWidth',1);
 
-% Global summary from full meniscus + full bottom tables
+%% ---------- Export TWO separate figures automatically ----------
+if cfg.exportFigures
+    if ~exist(cfg.exportDir, 'dir')
+        error('Export directory does not exist: %s', cfg.exportDir);
+    end
+
+    % Figure 1: Meniscus only
+    figM = figure('Color','w','Position',[120 120 760 640]);
+    axM = axes(figM); hold(axM,'on'); box(axM,'on');
+    trisurf(Fm, Vm(:,1)*1e3, Vm(:,2)*1e3, Vm(:,3)*1e3, ...
+        'FaceColor','flat', ...
+        'FaceVertexCData', repelem(Ctri_m_disp, 3), ...
+        'EdgeColor', cfg.edgeColor, 'EdgeAlpha', cfg.edgeAlpha3D, 'LineWidth', 0.15);
+    view(axM, 36, 22);
+    axis(axM,'equal'); grid(axM,'on');
+    % xlabel(axM, 'x (mm)'); ylabel(axM, 'y (mm)'); zlabel(axM, 'z (mm)');
+    colormap(axM, cfg.cmap);
+    cbM = colorbar(axM); cbM.Label.String = sprintf('%s (%s)', mLabel, cfg.unitLabel);
+    if cfg.sameCLim, caxis(axM, clim); else, caxis(axM, climM); end
+    set(axM,'FontSize',cfg.fontSize,'LineWidth',1);
+
+    outMeniscus = fullfile(cfg.exportDir, cfg.exportMeniscusName);
+    exportgraphics(figM, outMeniscus, 'Resolution', cfg.exportDPI);
+
+    % Figure 2: Bottom only
+    figB = figure('Color','w','Position',[920 120 760 640]);
+    axB = axes(figB); hold(axB,'on'); box(axB,'on');
+    trisurf(Fb, Vbz(:,1), Vbz(:,2), Vbz(:,3), ...
+        'FaceColor','flat', ...
+        'FaceVertexCData', repelem(Ctri_b_disp, 3), ...
+        'EdgeColor', cfg.edgeColor, 'EdgeAlpha', cfg.edgeAlpha2D, 'LineWidth', 0.1);
+    view(axB, 2);
+    axis(axB,'equal'); grid(axB,'on');
+    % xlabel(axB, 'x (mm)'); ylabel(axB, 'y (mm)');
+    colormap(axB, cfg.cmap);
+    cbB = colorbar(axB); cbB.Label.String = sprintf('%s (%s)', bLabel, cfg.unitLabel);
+    if cfg.sameCLim, caxis(axB, clim); else, caxis(axB, climB); end
+    set(axB,'FontSize',cfg.fontSize,'LineWidth',1);
+
+    outBottom = fullfile(cfg.exportDir, cfg.exportBottomName);
+    exportgraphics(figB, outBottom, 'Resolution', cfg.exportDPI);
+
+    fprintf('\nSaved figures:\n  %s\n  %s\n', outMeniscus, outBottom);
+end
+
+%% ---------- Global summary from full meniscus + full bottom tables ----------
 PinTot  = sum(Tm.Pin_W, 'omitnan');
 PoutTot = sum(TbAll.Ponplane_W, 'omitnan');
 
@@ -197,13 +245,6 @@ switch lower(cfg.globalLossMode)
         refLabel = 'meniscus\rightarrowbottom';
     otherwise
         error('Unknown cfg.globalLossMode: %s', cfg.globalLossMode);
-end
-
-sgtitle(sprintf('Power comparison meniscus \rightarrow bottom   |   \eta_{global}[%s]=%.4f   (loss=%.2f%%)', ...
-    refLabel, etaShown, 100*lossShown), 'FontWeight','bold');
-
-if cfg.exportFigure
-    exportgraphics(fig, cfg.exportName, 'Resolution', cfg.exportDPI);
 end
 
 fprintf('\n=== Thesis Comparison Summary ===\n');

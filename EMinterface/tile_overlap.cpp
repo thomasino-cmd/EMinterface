@@ -40,12 +40,12 @@ int main() {
         const double Dm = 1.0e-3;      // [m] profondità menisco (esempio)
 
         // Fascio 
-        const double Rf = 5.64e-3;     // [m] raggio fascio
-        
+        const double Rf = 5.64e-3;     // [m] raggio fascio USUAL VALUE: Rf = 5.64e-3;  
+
         //DISALLINEAMENTO LATERALE
-        const double x_af = 1.5e-3;     // [m] offset asse fascio oscilla tra 0.0mm E 0.5mm
+        const double x_af = 0.0e-3;     // [m] offset asse fascio oscilla tra 0.0mm E 0.5mm
         const double theta = 0 * utils::pi / 180.0;      //10.0 gradi di inclinazione rispetto alla verticale (esempio)
-        const double phi = 0 * utils::pi / 180.0;        //30 gradi di rotazione attorno all'asse z (esempio)
+        const double phi = 0 * utils::pi / 180.0;        //30 gradi di rotazione attorno all'asse z (esempio) questo così è inutile perchè il fascio è circolare quindi simmetrico 
 
         // Mesh
         const int n_pr = 10;          // punti per raggio (>=2)
@@ -53,7 +53,7 @@ int main() {
 
         // Post-processing plane
         // z1 = Cpp con 0 <= Cpp < f2(0,0)=a_pm 
-        const double Cpp = 0.6e-3;      // [m] esempio
+        const double Cpp = 0.0 ;      // [m] esempio 0.6e-3
 
         // Griglia output su (x1,y1) (copri tutto il disco interno)
         const int Nx = 250, Ny = 250;
@@ -71,7 +71,7 @@ int main() {
         media.sigma1 = 0.0;
 
         // Mezzo 2 (soluzione salina - esempi)
-        media.eps2_r = { 1.7716, -3.346e-7 };  // esempio complesso (80 è la parte reale, -5 è la parte immaginaria che rappresenta la perdita)
+        media.eps2_r = { 1.7716, -3.346e-7 };  
         media.mu2_r = { 1.0, 0.0 };
         media.sigma2 = 1.0;           // S/m (esempio 1.0 )
 
